@@ -99,3 +99,96 @@ body {
 .memory-dream:focus-visible::-webkit-slider-thumb {
   box-shadow: 0 0 0 4px rgba(242, 240, 234, 0.25);
 }
+
+/* A quiet marker above each reconstructed object: a ring that breathes until you've looked.
+ * Light ring with a dark edge, so it reads on bright walls and dark corners alike. */
+.hero-marker-wrap {
+  transition: opacity 0.6s;
+}
+.hero-marker {
+  pointer-events: auto;
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  cursor: pointer;
+  background: none;
+  border: 0;
+  outline: none;
+}
+.hero-marker-ring,
+.hero-marker::before {
+  position: absolute;
+  inset: 12px;
+  border-radius: 50%;
+  border: 1.5px solid rgba(242, 240, 234, 0.95);
+  box-shadow:
+    0 0 0 1px rgba(10, 10, 10, 0.45),
+    inset 0 0 0 1px rgba(10, 10, 10, 0.3),
+    0 0 14px rgba(0, 0, 0, 0.35);
+  transition:
+    inset 0.5s cubic-bezier(0.22, 1, 0.36, 1),
+    background 0.5s,
+    box-shadow 0.5s;
+  content: "";
+}
+/* The pulse: a second ring that swells and fades. */
+.hero-marker::before {
+  animation: hero-pulse 2.8s cubic-bezier(0.22, 1, 0.36, 1) infinite;
+}
+.hero-marker.is-hot .hero-marker-ring,
+.hero-marker:focus-visible .hero-marker-ring {
+  inset: 8px;
+  background: rgba(10, 10, 10, 0.25);
+}
+.hero-marker.is-seen .hero-marker-ring {
+  inset: 15px;
+  background: rgba(242, 240, 234, 0.9);
+}
+.hero-marker.is-seen::before {
+  animation: none;
+  opacity: 0;
+}
+.hero-marker-label {
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translate(-50%, 4px);
+  padding: 4px 9px;
+  white-space: nowrap;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 10px;
+  letter-spacing: 0.3em;
+  text-transform: lowercase;
+  color: #f2f0ea;
+  background: rgba(10, 10, 10, 0.62);
+  backdrop-filter: blur(4px);
+  opacity: 0;
+  transition:
+    opacity 0.4s,
+    transform 0.4s;
+  pointer-events: none;
+}
+.hero-marker.is-hot .hero-marker-label,
+.hero-marker:focus-visible .hero-marker-label {
+  opacity: 1;
+  transform: translate(-50%, -2px);
+}
+@keyframes hero-pulse {
+  0% {
+    inset: 12px;
+    opacity: 0.9;
+  }
+  70%,
+  100% {
+    inset: -2px;
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .hero-marker::before {
+    animation: none;
+    opacity: 0;
+  }
+}

@@ -56,11 +56,20 @@ test("a hero object shows where it came from in the photograph", async ({ page }
   await page.mouse.click(755, 575);
   await expect(page.getByTestId("evidence")).toBeVisible();
   await expect(page.getByText("observed here")).toBeVisible();
-  await expect(page.getByText("table lamp")).toBeVisible();
+  await expect(page.getByTestId("evidence").getByText("table lamp")).toBeVisible();
 
   await page.keyboard.press("Escape");
   await expect(page.getByTestId("evidence")).toBeHidden();
   await expect(page.locator("main")).toHaveAttribute("data-state", "exploring");
+
+  // Each object has a marker; clicking it also opens the evidence, then it quiets down.
+  const marker = page.getByRole("button", { name: /treadle sewing machine table: see where/ });
+  await expect(marker).toBeVisible();
+  await expect(marker).not.toHaveClass(/is-seen/);
+  await marker.click();
+  await expect(page.getByTestId("evidence")).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(marker).toHaveClass(/is-seen/);
 });
 
 test("memory ↔ dream, what the photo saw, and leaving the photographed memory", async ({

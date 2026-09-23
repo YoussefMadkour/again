@@ -45,6 +45,7 @@ export function CaptureView() {
         revealing={false}
         frozen
         onBeyond={() => {}}
+        seenObjects={new Set()}
         onLoaded={() => setTimeout(() => setLoaded(true), 2500)}
         onError={(e) => console.error("capture: splat failed", e)}
         onEntered={() => {}}

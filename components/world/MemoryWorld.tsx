@@ -38,6 +38,8 @@ interface Props {
   /** Input is ignored while an overlay is up. */
   frozen: boolean;
   onBeyond: () => void;
+  /** Hero objects whose evidence has been opened. */
+  seenObjects: ReadonlySet<string>;
 }
 
 export default function MemoryWorld({
@@ -55,6 +57,7 @@ export default function MemoryWorld({
   revealing,
   frozen,
   onBeyond,
+  seenObjects,
 }: Props) {
   const fx = useRef(createWorldFx());
   const capture = mode === "capture";
@@ -145,6 +148,7 @@ export default function MemoryWorld({
             camera={memory.originalCamera}
             onSelect={onSelectObject}
             onHoles={setHoles}
+            seen={seenObjects}
           />
           <SpatialAudio sounds={sounds} fx={fx} muted={muted} />
         </>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useGLTF } from "@react-three/drei";
+import { Html, useGLTF } from "@react-three/drei";
 import { type ThreeEvent, useFrame, useThree } from "@react-three/fiber";
 import { type RefObject, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
@@ -28,13 +28,15 @@ interface Props {
   onSelect: (id: string) => void;
   /** Reports the splat region each mesh now occupies, so it can be erased. */
   onHoles: (holes: Hole[]) => void;
+  /** Objects whose evidence has been opened: their marker quiets down. */
+  seen: ReadonlySet<string>;
 }
 
 /** A click, not the end of a drag-to-look. */
 const CLICK_PX = 6;
 const HOVER_EMISSIVE = new THREE.Color("#ffe2b8");
 
-export function HeroObjects({ objects, fx, camera, onSelect, onHoles }: Props) {
+export function HeroObjects({ objects, fx, camera, onSelect, onHoles, seen }: Props) {
   const [holes, setHoles] = useState<Record<string, Hole>>({});
   const report = useRef(onHoles);
   report.current = onHoles;
@@ -50,6 +52,7 @@ export function HeroObjects({ objects, fx, camera, onSelect, onHoles }: Props) {
           <HeroObject
             object={o}
             fx={fx}
+            seen={seen.has(o.id)}
             camera={camera}
             onSelect={onSelect}
             onPlaced={(hole) => setHoles((h) => ({ ...h, [o.id]: hole }))}
@@ -63,12 +66,14 @@ export function HeroObjects({ objects, fx, camera, onSelect, onHoles }: Props) {
 function HeroObject({
   object,
   fx,
+  seen,
   camera,
   onSelect,
   onPlaced,
 }: {
   object: PlacedObject;
   fx: RefObject<WorldFx>;
+  seen: boolean;
   camera: OriginalCamera;
   onSelect: (id: string) => void;
   onPlaced: (hole: Hole) => void;
@@ -130,11 +135,17 @@ function HeroObject({
   }, [object, transform]);
 
   const opaque = useRef(false);
+  const marker = useRef<HTMLDivElement>(null);
+  const [hot, setHot] = useState(false);
   useFrame((_, dt) => {
     appear.current = Math.min(1, appear.current + dt / 1.2);
     glow.current += ((hovered.current ? 1 : 0) - glow.current) * Math.min(1, dt * 8);
     const opacity = appear.current * fx.current.worldOpacity;
     if (group.current) group.current.visible = opacity > 0.001;
+    // The marker waits for the world, and steps aside while the photograph is laid over it.
+    if (marker.current) {
+      marker.current.style.opacity = String(opacity * (1 - fx.current.photoOpacity));
+    }
     // Fully in: render opaque, since transparent meshes sort badly against splats.
     const nowOpaque = opacity >= 0.999;
     const switched = nowOpaque !== opaque.current;
@@ -166,16 +177,49 @@ function HeroObject({
       onPointerOver={(e) => {
         e.stopPropagation();
         hovered.current = true;
+        setHot(true);
         document.body.style.cursor = "pointer";
       }}
       onPointerOut={() => {
         hovered.current = false;
+        setHot(false);
         document.body.style.cursor = "";
       }}
       onClick={click}
       name={`hero-${object.id}`}
     >
       <primitive object={model} />
+      {/* Just above the object, in its unscaled frame so it stays a constant size on screen. */}
+      <Html
+        position={[0, (transform.size.y / transform.scale) * 0.62, 0]}
+        center
+        zIndexRange={[15, 0]}
+        style={{ pointerEvents: "none" }}
+      >
+        <div ref={marker} className="hero-marker-wrap" style={{ opacity: 0 }}>
+          <button
+            type="button"
+            className={`hero-marker ${seen ? "is-seen" : ""} ${hot ? "is-hot" : ""}`}
+            onClick={(e) => {
+              // Let go of focus, so the label doesn't linger after the evidence closes.
+              e.currentTarget.blur();
+              onSelect(object.id);
+            }}
+            onPointerEnter={() => {
+              hovered.current = true;
+              setHot(true);
+            }}
+            onPointerLeave={() => {
+              hovered.current = false;
+              setHot(false);
+            }}
+            aria-label={`${object.label}: see where it is in the photograph`}
+          >
+            <span className="hero-marker-ring" />
+            <span className="hero-marker-label">{object.label}</span>
+          </button>
+        </div>
+      </Html>
     </group>
   );
 }

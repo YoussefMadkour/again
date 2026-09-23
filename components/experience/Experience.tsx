@@ -71,6 +71,7 @@ export function Experience({ gallery, access }: Props) {
   const [muted, setMuted] = useState(false);
   /** The hero object whose photographic evidence is showing. */
   const [evidence, setEvidence] = useState<string | null>(null);
+  const [seenObjects, setSeenObjects] = useState<ReadonlySet<string>>(new Set());
   /** 0 = MEMORY, 1 = DREAM. Starts leaning to the dream, so the world is whole but the
    * unseen parts are a little quieter than the photographed ones. */
   const [dream, setDream] = useState(0.75);
@@ -254,6 +255,7 @@ export function Experience({ gallery, access }: Props) {
     setMemory(null);
     setExtras(undefined);
     setEvidence(null);
+    setSeenObjects(new Set());
     setBeyond(false);
     setRevealing(false);
     setWorldLoaded(false);
@@ -324,7 +326,12 @@ export function Experience({ gallery, access }: Props) {
             card={card}
             returnSignal={returnSignal}
             muted={muted}
-            onSelectObject={(id) => state === "exploring" && setEvidence(id)}
+            onSelectObject={(id) => {
+              if (state !== "exploring") return;
+              setEvidence(id);
+              setSeenObjects((s) => new Set(s).add(id));
+            }}
+            seenObjects={seenObjects}
             dream={dream}
             revealing={revealing}
             frozen={Boolean(evidence) || beyond}
