@@ -2,6 +2,7 @@ import "server-only";
 import { getConfig } from "@/lib/config";
 import { cropToBox } from "@/lib/pipeline/crop";
 import type { ExtrasDeps } from "@/lib/pipeline/extras";
+import { optimizeRemoteGlb } from "@/lib/pipeline/optimize-glb";
 import { getStore } from "@/lib/store";
 import { LocalStorage } from "./providers/local-storage";
 import {
@@ -53,6 +54,7 @@ export function getExtrasDeps(): ExtrasDeps {
     audio: elevenKey && storage ? new ElevenLabsAudioProvider(elevenKey, storage) : null,
     storage,
     crop: cropToBox,
+    optimizeMesh: optimizeRemoteGlb,
   };
 }
 

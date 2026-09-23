@@ -14,13 +14,16 @@ export function fixGeneratedMaterial(material: THREE.Material) {
   m.envMapIntensity = 0.8;
 }
 
-let environment: THREE.Texture | null = null;
+// Per renderer: a texture belongs to one WebGL context and can't be shared across canvases.
+const environments = new WeakMap<THREE.WebGLRenderer, THREE.Texture>();
 
 /** A soft studio room for PBR reflections, generated locally (no HDR download). */
 export function roomEnvironment(renderer: THREE.WebGLRenderer): THREE.Texture {
-  if (environment) return environment;
+  const cached = environments.get(renderer);
+  if (cached) return cached;
   const pmrem = new THREE.PMREMGenerator(renderer);
-  environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+  const texture = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
   pmrem.dispose();
-  return environment;
+  environments.set(renderer, texture);
+  return texture;
 }

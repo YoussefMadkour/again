@@ -77,6 +77,8 @@ export interface ExtrasDeps {
   storage: FileStorage | null;
   /** Crops the photo to a box (with padding) and returns image bytes. */
   crop: (photoUrl: string, bbox: BoundingBox) => Promise<Uint8Array<ArrayBuffer>>;
+  /** Compresses a finished mesh for the browser; null when it wouldn't help. */
+  optimizeMesh?: (glbUrl: string) => Promise<Uint8Array<ArrayBuffer> | null>;
 }
 
 export const SOUND_BUDGET = {
@@ -240,7 +242,7 @@ async function advanceObject(o: HeroObjectState, photoUrl: string | null, deps: 
     if (o.state === "running" && o.meshHandle && deps.object3d) {
       const status = await deps.object3d.poll(o.meshHandle);
       if (status.state === "succeeded") {
-        o.glbUrl = status.glbUrl;
+        o.glbUrl = await compressed(status.glbUrl, o.id, deps);
         o.state = "done";
       } else if (status.state === "failed") {
         o.state = "failed";
@@ -250,6 +252,18 @@ async function advanceObject(o: HeroObjectState, photoUrl: string | null, deps: 
   } catch (error) {
     o.state = "failed";
     o.error = message(error);
+  }
+}
+
+/** Generated meshes ship uncompressed textures; a failed compression keeps the original. */
+async function compressed(glbUrl: string, id: string, deps: ExtrasDeps): Promise<string> {
+  if (!deps.optimizeMesh || !deps.storage) return glbUrl;
+  try {
+    const bytes = await deps.optimizeMesh(glbUrl);
+    if (!bytes) return glbUrl;
+    return await deps.storage.upload(bytes, "model/gltf-binary", `mesh-${id}-${randomId(6)}.glb`);
+  } catch {
+    return glbUrl;
   }
 }
 

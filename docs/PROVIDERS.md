@@ -88,7 +88,11 @@ Compared on real crops (`scripts/compare-meshes.ts`, `/dev/mesh?files=...` to pr
 |---|---|---|---|---|
 | `trellis` (fal-ai/trellis) | **$0.02** | 25-50s | ~1.3 MB | **Default.** Good once given a clean cutout and the material fix below |
 | `trellis-2` | $0.25 (512p) | ~90s | ~3 MB | Cleaner textures; the upgrade if quality matters more than cost |
-| `hunyuan3d-v3` | $0.375 | ~145s | **~33 MB** | Best geometry, but far too heavy to load next to a splat |
+| `hunyuan3d-v3` | $0.375 | ~145s | ~33 MB raw, ~1.2 MB compressed | Best geometry; practical once compressed |
+
+Every finished mesh is then compressed (`lib/pipeline/optimize-glb.ts`: WebP textures at
+1024px + meshopt): Hunyuan3D 32.6 → 1.2 MB, TRELLIS 1.5 → 0.15 MB, visually identical. That
+makes `hunyuan3d-v3` practical for the web if its quality is worth $0.375.
 
 What mattered more than the model:
 - **A cutout of just the object.** Every model reconstructs whatever is in the image, so

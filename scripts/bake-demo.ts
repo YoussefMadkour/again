@@ -2,9 +2,10 @@
 // the 500k splat, hero meshes, sounds and photo, plus lib/demo/<name>.json. The full-res splat
 // stays a remote upgrade. Usage:
 //   tsx --env-file=.env.local scripts/bake-demo.ts <gallery_id> <name> <fov> <pitch> <yaw>
-import { copyFile, mkdir, writeFile } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import { readLocalFile } from "../lib/ai/providers/local-storage";
 import { getGalleryEntry } from "../lib/gallery";
+import { optimizeGlb } from "../lib/pipeline/optimize-glb";
 import { getStore } from "../lib/store";
 
 const [id, name, fov, pitch, yaw] = process.argv.slice(2);
@@ -17,7 +18,9 @@ const dir = `public/demo/${name}`;
 await mkdir(dir, { recursive: true });
 const fetchTo = async (url: string, file: string) => {
   const local = await readLocalFile(url);
-  const bytes = local ?? Buffer.from(await (await fetch(url)).arrayBuffer());
+  let bytes: Uint8Array = local ?? Buffer.from(await (await fetch(url)).arrayBuffer());
+  // Meshes are compressed for the browser (idempotent if they already are).
+  if (file.endsWith(".glb")) bytes = await optimizeGlb(bytes);
   await writeFile(`${dir}/${file}`, bytes);
   console.log(`${file} ${(bytes.length / 1048576).toFixed(1)} MB`);
   return `/demo/${name}/${file}`;

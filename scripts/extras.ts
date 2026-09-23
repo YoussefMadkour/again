@@ -16,6 +16,7 @@ import { GeminiVisionProvider } from "../lib/ai/providers/real/gemini";
 import { getGalleryEntry, updateGalleryExtras } from "../lib/gallery";
 import { cropToBox } from "../lib/pipeline/crop";
 import { advanceExtras, readExtras, startExtras, toPublicExtras } from "../lib/pipeline/extras";
+import { optimizeRemoteGlb } from "../lib/pipeline/optimize-glb";
 import { getStore } from "../lib/store";
 
 const [galleryId] = process.argv.slice(2);
@@ -51,6 +52,7 @@ const deps = {
   audio: ELEVENLABS_API_KEY ? new ElevenLabsAudioProvider(ELEVENLABS_API_KEY, storage) : null,
   storage,
   crop: cropToBox,
+  optimizeMesh: optimizeRemoteGlb,
 };
 
 // Resume if this memory already has extras (never pay twice); retry objects that failed.

@@ -7,20 +7,24 @@ import type * as THREE from "three";
 import { fixGeneratedMaterial, roomEnvironment } from "@/lib/world/materials";
 
 function Model({ url, angle }: { url: string; angle: number }) {
-  const { scene } = useGLTF(url);
+  const { scene: original } = useGLTF(url);
   const gl = useThree((s) => s.gl);
-  // Same material handling as the app's hero objects.
-  useMemo(() => {
+  // Same material handling as the app's hero objects, on a copy per canvas.
+  const scene = useMemo(() => {
+    const scene = original.clone(true);
     const env = roomEnvironment(gl);
     scene.traverse((n) => {
       const mesh = n as THREE.Mesh;
       if (!mesh.isMesh) return;
-      for (const m of [mesh.material].flat()) {
-        fixGeneratedMaterial(m);
-        (m as THREE.MeshStandardMaterial).envMap = env;
-      }
+      mesh.material = [mesh.material].flat().map((m) => {
+        const copy = m.clone();
+        fixGeneratedMaterial(copy);
+        (copy as THREE.MeshStandardMaterial).envMap = env;
+        return copy;
+      })[0];
     });
-  }, [scene, gl]);
+    return scene;
+  }, [original, gl]);
   return (
     <Bounds fit clip observe margin={1.15}>
       <Center rotation={[0, angle, 0]}>
