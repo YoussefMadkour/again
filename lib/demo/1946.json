@@ -1,0 +1,61 @@
+{
+  "photoUrl": "/demo/1946/photo.jpg",
+  "splatUrl": "/demo/1946/world-500k.spz",
+  "splatUpgradeUrl": "https://cdn.marble.worldlabs.ai/6f83b783-378d-4712-be66-9941823b7f72/cf5ab745-4c65-4213-a0b6-8ef2c5570084_ceramic.spz",
+  "splatScale": 0.7563676834106445,
+  "originalCamera": {
+    "position": [0, 0, 0],
+    "rotation": [-0.056, 0, 0],
+    "fov": 45.05
+  },
+  "extras": {
+    "done": true,
+    "scene": {
+      "sceneType": "living room",
+      "estimatedEra": "1940s",
+      "description": "A modest domestic room combining living and sleeping quarters, where a woman in an apron pauses by a sewing table to look at a framed portrait of a serviceman.",
+      "mood": "contemplative, quiet, tender",
+      "uncertainties": [
+        "Contents of the room beyond the left doorway",
+        "Specific flooring material under the rug pattern (linoleum vs woven wool)",
+        "Exact landscape or streetscape outside the window"
+      ]
+    },
+    "objects": [
+      {
+        "id": "table-lamp",
+        "label": "table lamp",
+        "description": "Turned-base table lamp with a pleated fabric shade resting on the center table",
+        "bbox": [0.45094265614587303, 0.44666935148693265, 0.596070776980793, 0.7766868954613095],
+        "glbUrl": "/demo/1946/table-lamp.glb",
+        "state": "done"
+      },
+      {
+        "id": "sewing-machine-table",
+        "label": "treadle sewing machine table",
+        "description": "Vintage wooden sewing cabinet on an ornate cast-iron treadle base",
+        "bbox": [0.14752610984505904, 0.6191431681315105, 0.287994384765625, 0.8748429313538566],
+        "glbUrl": "/demo/1946/sewing-machine-table.glb",
+        "state": "done"
+      }
+    ],
+    "sounds": [
+      {
+        "id": "ambient-b750b404",
+        "kind": "ambient",
+        "description": "Quiet interior room tone with subtle outside street sounds filtered through closed glass",
+        "url": "/demo/1946/ambient-ambient-b750b404.mp3",
+        "state": "done"
+      },
+      {
+        "id": "sound-60915098",
+        "kind": "positional",
+        "description": "Gentle wood settling and cloth rustle as the occupant stands by the desk",
+        "objectId": "sewing-machine-table",
+        "bbox": [0.142, 0.611, 0.303, 0.878],
+        "url": "/demo/1946/positional-sound-60915098.mp3",
+        "state": "done"
+      }
+    ]
+  }
+}

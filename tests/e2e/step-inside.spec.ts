@@ -49,16 +49,63 @@ test("a hero object shows where it came from in the photograph", async ({ page }
   await expect(page.getByText(/click what glows/)).toBeVisible();
   await expect(page.getByRole("button", { name: "sound on" })).toBeVisible();
 
-  // The demo kettle sits at about (620, 495) at 1440x900 right after entering.
+  // The demo's table lamp sits at about (755, 575) at 1440x900 right after entering.
   await page.waitForTimeout(2500);
-  await page.mouse.move(620, 495, { steps: 4 });
+  await page.mouse.move(755, 575, { steps: 4 });
   await expect.poll(() => page.evaluate(() => document.body.style.cursor)).toBe("pointer");
-  await page.mouse.click(620, 495);
+  await page.mouse.click(755, 575);
   await expect(page.getByTestId("evidence")).toBeVisible();
   await expect(page.getByText("observed here")).toBeVisible();
-  await expect(page.getByText("blue kettle")).toBeVisible();
+  await expect(page.getByText("table lamp")).toBeVisible();
 
   await page.keyboard.press("Escape");
   await expect(page.getByTestId("evidence")).toBeHidden();
   await expect(page.locator("main")).toHaveAttribute("data-state", "exploring");
+});
+
+test("memory ↔ dream, what the photo saw, and leaving the photographed memory", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: /enter a memory/i }).click();
+  const step = page.getByRole("button", { name: /^step inside$/i });
+  await expect(step).toBeVisible({ timeout: 90_000 });
+  await step.click();
+  await expect(page.locator("main")).toHaveAttribute("data-state", "exploring", {
+    timeout: 10_000,
+  });
+
+  const slider = page.getByLabel("Memory to dream");
+  await expect(slider).toBeVisible();
+  await page.getByRole("button", { name: "Memory", exact: true }).click();
+  await expect(slider).toHaveValue("0");
+  await page.getByRole("button", { name: "Dream", exact: true }).click();
+  await expect(slider).toHaveValue("1");
+
+  // Hold SPACE: observed / inferred / imagined.
+  await page.locator("canvas").click({ position: { x: 20, y: 20 } });
+  await page.keyboard.down("Space");
+  await expect(page.getByTestId("provenance-legend")).toBeVisible();
+  await expect(page.getByText("imagined", { exact: true })).toBeVisible();
+  await page.keyboard.up("Space");
+  await expect(page.getByTestId("provenance-legend")).toBeHidden();
+
+  // Turn well away from what the photograph saw.
+  await page.mouse.move(1000, 450);
+  await page.mouse.down();
+  await page.mouse.move(400, 450, { steps: 20 });
+  await page.mouse.up();
+  await expect(page.getByTestId("beyond")).toBeVisible({ timeout: 5_000 });
+  await expect(page.getByText("You are leaving the photographed memory.")).toBeVisible();
+  await page.getByRole("button", { name: "Continue" }).click();
+  await expect(page.getByTestId("beyond")).toBeHidden();
+
+  // Only once per session.
+  await page.mouse.move(400, 450);
+  await page.mouse.down();
+  await page.mouse.move(1000, 450, { steps: 10 });
+  await page.mouse.move(300, 450, { steps: 10 });
+  await page.mouse.up();
+  await page.waitForTimeout(1000);
+  await expect(page.getByTestId("beyond")).toBeHidden();
 });

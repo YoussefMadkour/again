@@ -233,7 +233,7 @@ async function advanceObject(o: HeroObjectState, photoUrl: string | null, deps: 
           `crop-${o.id}-${randomId(6)}.jpg`,
         );
       }
-      o.meshHandle = await deps.object3d.submit(o.cropUrl ?? photoUrl);
+      o.meshHandle = await deps.object3d.submit(o.cropUrl ?? photoUrl, o.label);
       o.state = "running";
       return;
     }

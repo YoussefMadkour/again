@@ -1,6 +1,6 @@
 /**
- * fal.ai: one key for scene analysis (vision LLMs via OpenRouter), object outlines (SAM 3),
- * image-to-3D (Hunyuan3D v3) and file hosting (fal CDN).
+ * fal.ai: one key for object outlines (SAM 3), image-to-3D (TRELLIS / Hunyuan3D), file hosting
+ * (fal CDN), and optionally scene analysis (vision LLMs via OpenRouter).
  */
 import type {
   FileStorage,
@@ -75,7 +75,7 @@ export class FalClient {
   }
 }
 
-/** Claude (or any OpenRouter vision model) reading the photograph. */
+/** Any OpenRouter vision model (Gemini by default) reading the photograph, billed through fal. */
 export class FalVisionProvider implements VisionProvider {
   constructor(
     private readonly fal: FalClient,
@@ -124,29 +124,119 @@ export class FalSegmentProvider implements SegmentProvider {
   }
 }
 
-export class FalHunyuanProvider implements Object3DProvider {
-  constructor(private readonly fal: FalClient) {}
-
-  async submit(imageUrl: string): Promise<string> {
-    const job = await this.fal.submit("fal-ai/hunyuan3d-v3/image-to-3d", {
-      input_image_url: imageUrl,
+/** Image-to-3D models on fal, and how to talk to each. Prices are per object. */
+export const MESH_MODELS = {
+  /** $0.02. Fast and cheap; good enough for most room-scale props. */
+  trellis: {
+    endpoint: "fal-ai/trellis",
+    // Default simplification (0.95) leaves ~4k triangles; 0.9 (the minimum) keeps curves rounder.
+    input: (image_url: string) => ({ image_url, texture_size: 1024, mesh_simplify: 0.9 }),
+    output: (o: FalFiles) => o.model_mesh?.url,
+  },
+  /** $0.25 at 512p. Cleaner topology and textures. */
+  "trellis-2": {
+    endpoint: "fal-ai/trellis-2",
+    input: (image_url: string) => ({
+      image_url,
+      resolution: 512,
+      texture_size: 1024,
+      decimation_target: 100_000,
+    }),
+    output: (o: FalFiles) => o.model_glb?.url,
+  },
+  /** $0.375. Detailed PBR assets. */
+  "hunyuan3d-v3": {
+    endpoint: "fal-ai/hunyuan3d-v3/image-to-3d",
+    input: (input_image_url: string) => ({
+      input_image_url,
       // Room-scale objects next to a splat: detail past ~150k faces isn't visible, but load time is.
       face_count: 150_000,
       generate_type: "Normal",
       enable_pbr: true,
+    }),
+    output: (o: FalFiles) => o.model_glb?.url,
+  },
+} as const;
+
+export type MeshModel = keyof typeof MESH_MODELS;
+type FalFiles = { model_glb?: { url?: string }; model_mesh?: { url?: string } };
+
+export function isMeshModel(name: string | undefined): name is MeshModel {
+  return Boolean(name && name in MESH_MODELS);
+}
+
+export class FalMeshProvider implements Object3DProvider {
+  constructor(
+    private readonly fal: FalClient,
+    private readonly model: MeshModel,
+  ) {}
+
+  async submit(imageUrl: string, label?: string): Promise<string> {
+    const m = MESH_MODELS[this.model];
+    // A clean cutout of just this object; the crop itself if every cutout fails.
+    const input = await cutOut(this.fal, imageUrl, label).catch(() => imageUrl);
+    const job = await this.fal.submit(m.endpoint, m.input(input));
+    return JSON.stringify({
+      model: this.model,
+      status: job.status_url,
+      response: job.response_url,
     });
-    return JSON.stringify({ status: job.status_url, response: job.response_url });
   }
 
   async poll(handle: string): Promise<MeshStatus> {
-    const { status, response } = JSON.parse(handle) as { status: string; response: string };
+    const { model, status, response } = JSON.parse(handle) as {
+      model?: MeshModel;
+      status: string;
+      response: string;
+    };
     const s = await this.fal.status(status);
     if (s.error) return { state: "failed", error: s.error };
     if (s.status !== "COMPLETED") return { state: "pending" };
-    const out = await this.fal.result<{ model_glb?: { url?: string } }>(response);
-    const glbUrl = out.model_glb?.url;
+    const out = await this.fal.result<FalFiles>(response);
+    const glbUrl = MESH_MODELS[model ?? this.model].output(out);
     return glbUrl ? { state: "succeeded", glbUrl } : { state: "failed", error: "no mesh returned" };
   }
+}
+
+/**
+ * Cuts the object out of its crop (BiRefNet, ~$0.001). Image-to-3D models reconstruct
+ * whatever is in the picture, so background left in a crop comes back as a slab behind the
+ * object. Returns the URL of a transparent PNG.
+ */
+export async function removeBackground(fal: FalClient, imageUrl: string): Promise<string> {
+  const out = await fal.run<{ image?: { url?: string } }>("fal-ai/birefnet/v2", {
+    image_url: imageUrl,
+    model: "General Use (Heavy)",
+    output_format: "png",
+    refine_foreground: true,
+  });
+  if (!out.image?.url) throw new FalError("background removal returned no image", 502);
+  return out.image.url;
+}
+
+/** SAM 3 below this confidence may have picked the wrong thing: use generic removal. */
+const MIN_CUTOUT_SCORE = 0.3;
+
+/**
+ * Isolates the named object in its crop. SAM 3 cuts out *that* object; generic background
+ * removal guesses at "the subject", which fails on busy or painted scenes (it once kept the
+ * room and removed the kettle).
+ */
+export async function cutOut(fal: FalClient, imageUrl: string, label?: string): Promise<string> {
+  if (label) {
+    const out = await fal
+      .run<{ image?: { url?: string } | null; scores?: number[] | null }>("fal-ai/sam-3/image", {
+        image_url: imageUrl,
+        prompt: label,
+        apply_mask: true,
+        include_scores: true,
+        output_format: "png",
+      })
+      .catch(() => null);
+    const score = out?.scores?.[0] ?? 0;
+    if (out?.image?.url && score >= MIN_CUTOUT_SCORE) return out.image.url;
+  }
+  return removeBackground(fal, imageUrl);
 }
 
 /** fal's CDN: public, unguessable URLs that fal's own models can fetch. */

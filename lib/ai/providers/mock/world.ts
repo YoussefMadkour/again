@@ -25,6 +25,8 @@ export class MockWorldProvider implements WorldProvider {
       result: {
         splatUrl: "/demo/painted-bedroom.spz",
         sourcePhotoUrl: "/demo/photo.jpg",
+        // The painted room was rendered for its photo from a level 60° camera.
+        camera: { fov: 60, pitch: 0, yaw: 0 },
         format: "spz",
         metricScale: 1,
         metadata: { provider: "mock", generatedAt: new Date(createdAt).toISOString() },

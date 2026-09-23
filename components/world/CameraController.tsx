@@ -6,6 +6,7 @@ import * as THREE from "three";
 import type { OriginalCamera } from "@/lib/demo/memory";
 import { type CardRect, clamp01, ENTRY, entryFrame, handoffOffset } from "@/lib/world/entry";
 import type { WorldFx } from "./fx";
+import { directionEdge } from "./provenance";
 
 export type WorldMode = "ready" | "entering" | "exploring" | "capture";
 
@@ -17,7 +18,15 @@ interface Props {
   /** Incrementing this sends the camera back to the photograph's viewpoint. */
   returnSignal: number;
   onEntered: () => void;
+  /** Input is ignored while an overlay is up. */
+  frozen?: boolean;
+  /** Called once, the first time the view turns well beyond what the photograph saw. */
+  onBeyond?: () => void;
+  photoAspect: number;
 }
+
+/** How far past the photo's edge the view must point to count as "beyond" (1 = the edge). */
+const BEYOND_EDGE = 1.7;
 
 const LOOK_SPEED = 0.0032;
 const MAX_PITCH = 1.1;
@@ -49,7 +58,17 @@ const X_AXIS = new THREE.Vector3(1, 0, 0);
  * Owns the camera: the scripted entry through the photo, then a gentle free camera.
  * Movement is heavily damped so it feels like drifting through a place, not a shooter.
  */
-export function CameraController({ mode, original, card, fx, returnSignal, onEntered }: Props) {
+export function CameraController({
+  mode,
+  original,
+  card,
+  fx,
+  returnSignal,
+  onEntered,
+  frozen = false,
+  onBeyond,
+  photoAspect,
+}: Props) {
   const camera = useThree((s) => s.camera) as THREE.PerspectiveCamera;
   const dom = useThree((s) => s.gl.domElement);
 
@@ -78,6 +97,14 @@ export function CameraController({ mode, original, card, fx, returnSignal, onEnt
 
   const modeRef = useRef(mode);
   modeRef.current = mode;
+  const frozenRef = useRef(frozen);
+  frozenRef.current = frozen;
+  const beyond = useRef({ reported: false, onBeyond });
+  beyond.current.onBeyond = onBeyond;
+
+  useEffect(() => {
+    if (frozen) s.current.keys.clear();
+  }, [frozen]);
 
   useEffect(() => {
     camera.fov = original.fov;
@@ -99,7 +126,7 @@ export function CameraController({ mode, original, card, fx, returnSignal, onEnt
 
   useEffect(() => {
     const state = s.current;
-    const exploring = () => modeRef.current === "exploring";
+    const exploring = () => modeRef.current === "exploring" && !frozenRef.current;
     const wake = () => {
       state.memoryView = false;
       state.returning = false;
@@ -269,6 +296,15 @@ export function CameraController({ mode, original, card, fx, returnSignal, onEnt
     }
 
     camera.position.copy(base.p).add(state.offset);
+
+    // The first time the view turns well past the photograph, say so.
+    if (!beyond.current.reported && !state.returning) {
+      const edge = directionEdge(original, photoAspect, camera.getWorldDirection(_v));
+      if (edge > BEYOND_EDGE) {
+        beyond.current.reported = true;
+        beyond.current.onBeyond?.();
+      }
+    }
 
     fx.current.worldOpacity = 1;
     fx.current.photoFeather = 1;

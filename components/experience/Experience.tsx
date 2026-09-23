@@ -33,6 +33,7 @@ import { EvidencePanel } from "./EvidencePanel";
 import { Gallery } from "./Gallery";
 import { PhotoDrop } from "./PhotoDrop";
 import { ProcessingCopy } from "./ProcessingCopy";
+import { BeyondOverlay, MemoryDreamSlider, ProvenanceLegend } from "./Provenance";
 
 const MemoryWorld = dynamic(() => import("@/components/world/MemoryWorld"), { ssr: false });
 
@@ -70,6 +71,11 @@ export function Experience({ gallery, access }: Props) {
   const [muted, setMuted] = useState(false);
   /** The hero object whose photographic evidence is showing. */
   const [evidence, setEvidence] = useState<string | null>(null);
+  /** 0 = MEMORY, 1 = DREAM. Starts leaning to the dream, so the world is whole but the
+   * unseen parts are a little quieter than the photographed ones. */
+  const [dream, setDream] = useState(0.75);
+  const [revealing, setRevealing] = useState(false);
+  const [beyond, setBeyond] = useState(false);
   const card = useRef<CardRect | null>(null);
   const photoEl = useRef<HTMLImageElement | null>(null);
   const job = useRef<AbortController | null>(null);
@@ -248,6 +254,8 @@ export function Experience({ gallery, access }: Props) {
     setMemory(null);
     setExtras(undefined);
     setEvidence(null);
+    setBeyond(false);
+    setRevealing(false);
     setWorldLoaded(false);
     setNotice(null);
     setReturnSignal(0);
@@ -273,6 +281,28 @@ export function Experience({ gallery, access }: Props) {
     dispatch({ type: "STEP_INSIDE" });
   }, [canEnter, measure]);
 
+  // Hold SPACE to see what the photograph saw.
+  useEffect(() => {
+    if (state !== "exploring") return;
+    const down = (e: KeyboardEvent) => {
+      if (e.code !== "Space" || e.target instanceof HTMLInputElement) return;
+      e.preventDefault();
+      if (!e.repeat) setRevealing(true);
+    };
+    const up = (e: KeyboardEvent) => {
+      if (e.code === "Space") setRevealing(false);
+    };
+    const blur = () => setRevealing(false);
+    window.addEventListener("keydown", down);
+    window.addEventListener("keyup", up);
+    window.addEventListener("blur", blur);
+    return () => {
+      window.removeEventListener("keydown", down);
+      window.removeEventListener("keyup", up);
+      window.removeEventListener("blur", blur);
+    };
+  }, [state]);
+
   useEffect(() => {
     if (!canEnter) return;
     const onKey = (e: KeyboardEvent) => {
@@ -295,6 +325,13 @@ export function Experience({ gallery, access }: Props) {
             returnSignal={returnSignal}
             muted={muted}
             onSelectObject={(id) => state === "exploring" && setEvidence(id)}
+            dream={dream}
+            revealing={revealing}
+            frozen={Boolean(evidence) || beyond}
+            onBeyond={() => {
+              if (!onceThisSession("again:beyond-seen")) return;
+              setBeyond(true);
+            }}
             onLoaded={() => setWorldLoaded(true)}
             onError={(error) => fail(new MemoryError(`this world couldn't be opened (${error})`))}
             onEntered={() => dispatch({ type: "ENTERED" })}
@@ -498,6 +535,24 @@ export function Experience({ gallery, access }: Props) {
             onToggleSound={() => setMuted((m) => !m)}
             hasSound={Boolean(extras?.sounds.some((s) => s.state === "done"))}
             hasObjects={Boolean(extras?.objects.some((o) => o.state === "done"))}
+            dream={dream}
+            onDream={setDream}
+          />
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {state === "exploring" && revealing && <ProvenanceLegend key="legend" />}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {beyond && (
+          <BeyondOverlay
+            onContinue={() => setBeyond(false)}
+            onReturn={() => {
+              setBeyond(false);
+              setReturnSignal((n) => n + 1);
+            }}
           />
         )}
       </AnimatePresence>
@@ -527,6 +582,8 @@ function ExploreHud({
   onToggleSound,
   hasSound,
   hasObjects,
+  dream,
+  onDream,
 }: {
   onReturn: () => void;
   onLeave: () => void;
@@ -534,6 +591,8 @@ function ExploreHud({
   onToggleSound: () => void;
   hasSound: boolean;
   hasObjects: boolean;
+  dream: number;
+  onDream: (v: number) => void;
 }) {
   const [hintVisible, setHintVisible] = useState(true);
   useEffect(() => {
@@ -551,13 +610,16 @@ function ExploreHud({
       data-testid="explore-hud"
     >
       <motion.p
-        className="absolute bottom-8 left-1/2 -translate-x-1/2 whitespace-nowrap font-mono text-[10px] lowercase tracking-[0.3em] text-bone/45"
+        className="absolute bottom-20 left-1/2 -translate-x-1/2 whitespace-nowrap font-mono text-[10px] lowercase tracking-[0.3em] text-bone/45"
         animate={{ opacity: hintVisible ? 1 : 0 }}
         transition={{ duration: 1.5 }}
       >
-        drag to look · wasd to move · esc to return
+        drag to look · wasd to move · hold space to see what the photo saw
         {hasObjects && " · click what glows"}
       </motion.p>
+      <div className="absolute bottom-7 left-1/2 -translate-x-1/2">
+        <MemoryDreamSlider value={dream} onChange={onDream} />
+      </div>
       {hasSound && (
         <button
           type="button"
@@ -583,4 +645,15 @@ function ExploreHud({
       </button>
     </motion.div>
   );
+}
+
+/** True the first time it's asked this session (per key); false after, or without storage. */
+function onceThisSession(key: string): boolean {
+  try {
+    if (sessionStorage.getItem(key)) return false;
+    sessionStorage.setItem(key, "1");
+    return true;
+  } catch {
+    return true;
+  }
 }

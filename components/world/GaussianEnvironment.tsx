@@ -12,6 +12,7 @@ import {
 import { type RefObject, useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import type { WorldFx } from "./fx";
+import { type ProvenanceUniforms, provenanceModifier } from "./provenance";
 
 interface Props {
   url: string;
@@ -28,6 +29,8 @@ interface Props {
   onMesh?: (mesh: SplatMesh) => void;
   /** Regions to erase from the splat, where a hero mesh now stands. World space. */
   holes?: Hole[];
+  /** Per-splat provenance (observed / inferred / imagined). */
+  provenance?: ProvenanceUniforms;
 }
 
 export interface Hole {
@@ -58,6 +61,7 @@ export function GaussianEnvironment({
   onError,
   onMesh,
   holes = [],
+  provenance,
 }: Props) {
   const gl = useThree((s) => s.gl);
   const scene = useThree((s) => s.scene);
@@ -75,7 +79,7 @@ export function GaussianEnvironment({
     const spark = new SparkRenderer({ renderer: gl });
     scene.add(spark);
 
-    const mesh = createMesh(url, [qx, qy, qz, qw], scale);
+    const mesh = createMesh(url, [qx, qy, qz, qw], scale, provenance);
     scene.add(mesh);
     base.current = mesh;
     baseLoaded.current = false;
@@ -107,7 +111,7 @@ export function GaussianEnvironment({
       scene.remove(spark);
       spark.dispose?.();
     };
-  }, [gl, scene, url, qx, qy, qz, qw, scale]);
+  }, [gl, scene, url, qx, qy, qz, qw, scale, provenance]);
 
   // Erase the splat where hero meshes stand, on every splat of this world.
   const holeKey = holes.map((h) => h.id).join(",");
@@ -124,12 +128,26 @@ export function GaussianEnvironment({
     };
   }, [holeKey, upgradeReady]);
 
+  // Spark caches each splat's modified values: nudge it when the provenance uniforms move.
+  const lastProvenance = useRef({ dream: -1, reveal: -1 });
+
   useFrame((_, dt) => {
     const world = fx.current.worldOpacity;
+    if (provenance) {
+      const last = lastProvenance.current;
+      const dream = provenance.dream.value;
+      const reveal = provenance.reveal.value;
+      if (Math.abs(dream - last.dream) > 1e-3 || Math.abs(reveal - last.reveal) > 1e-3) {
+        last.dream = dream;
+        last.reveal = reveal;
+        base.current?.updateVersion();
+        upgrade.current?.mesh.updateVersion();
+      }
+    }
 
     // Start the upgrade once the base is in and nothing cinematic is happening.
     if (upgradeUrl && !upgrade.current && baseLoaded.current && !holdUpgrade) {
-      const mesh = createMesh(upgradeUrl, [qx, qy, qz, qw], scale);
+      const mesh = createMesh(upgradeUrl, [qx, qy, qz, qw], scale, provenance);
       const entry = { mesh, blend: 0, ready: false };
       upgrade.current = entry;
       scene.add(mesh);
@@ -166,8 +184,16 @@ export function GaussianEnvironment({
   return null;
 }
 
-function createMesh(url: string, [x, y, z, w]: [number, number, number, number], scale: number) {
-  const mesh = new SplatMesh({ url });
+function createMesh(
+  url: string,
+  [x, y, z, w]: [number, number, number, number],
+  scale: number,
+  provenance?: ProvenanceUniforms,
+) {
+  const mesh = new SplatMesh({
+    url,
+    worldModifier: provenance ? provenanceModifier(provenance) : undefined,
+  });
   mesh.quaternion.set(x, y, z, w);
   mesh.scale.setScalar(scale);
   mesh.opacity = 0;

@@ -2,7 +2,7 @@
 
 import dynamic from "next/dynamic";
 import { useRef, useState } from "react";
-import { DEMO_MEMORY, type Memory } from "@/lib/demo/memory";
+import { type Memory, PAINTED_MEMORY } from "@/lib/demo/memory";
 import type { CardRect } from "@/lib/world/entry";
 
 const MemoryWorld = dynamic(() => import("@/components/world/MemoryWorld"), { ssr: false });
@@ -15,10 +15,10 @@ export function CaptureView() {
   const card = useRef<CardRect | null>(null);
   const [memory] = useState<Memory>(() => {
     const q = new URLSearchParams(typeof window === "undefined" ? "" : window.location.search);
-    const cam = DEMO_MEMORY.originalCamera;
+    const cam = PAINTED_MEMORY.originalCamera;
     return {
-      ...DEMO_MEMORY,
-      splatUrl: q.get("splat") ?? DEMO_MEMORY.splatUrl,
+      ...PAINTED_MEMORY,
+      splatUrl: q.get("splat") ?? PAINTED_MEMORY.splatUrl,
       originalCamera: {
         position: parse(q.get("pos")) ?? cam.position,
         rotation: parse(q.get("rot")) ?? cam.rotation,
@@ -41,6 +41,10 @@ export function CaptureView() {
         returnSignal={0}
         muted
         onSelectObject={() => {}}
+        dream={1}
+        revealing={false}
+        frozen
+        onBeyond={() => {}}
         onLoaded={() => setTimeout(() => setLoaded(true), 2500)}
         onError={(e) => console.error("capture: splat failed", e)}
         onEntered={() => {}}

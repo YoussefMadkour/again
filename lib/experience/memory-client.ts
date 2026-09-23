@@ -184,8 +184,8 @@ export async function buildMemory(
   photo: PreparedPhoto,
   world: WorldResult,
 ): Promise<Memory> {
-  let camera = FALLBACK_CAMERA;
-  if (world.panoUrl) {
+  let camera = world.camera ?? FALLBACK_CAMERA;
+  if (!world.camera && world.panoUrl) {
     try {
       const fit = await calibrateFromPano(photo.url, world.panoUrl);
       if (fit.score >= MIN_CALIBRATION_SCORE) camera = fit;

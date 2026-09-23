@@ -25,7 +25,13 @@ describe("hero object selection", () => {
 
   it("takes at most three, best first, and skips inferred, tiny or preserved objects", () => {
     const good = (id: string, s: number) =>
-      obj({ id, importance: s, interactionPotential: s, meshFeasibility: s });
+      obj({
+        id,
+        importance: s,
+        interactionPotential: s,
+        meshFeasibility: s,
+        recommendedRepresentation: "mesh",
+      });
     const picked = selectHeroObjects([
       good("a", 0.7),
       good("b", 0.95),
@@ -36,6 +42,24 @@ describe("hero object selection", () => {
       { ...good("portrait", 1), recommendedRepresentation: "preserve" },
     ]);
     expect(picked.map((o) => o.id)).toEqual(["b", "d", "c"]);
+  });
+
+  it("leaves big furniture and unrecommended objects in the splat", () => {
+    const strong = { importance: 0.85, interactionPotential: 0.85, meshFeasibility: 0.85 };
+    const fair = { importance: 0.7, interactionPotential: 0.7, meshFeasibility: 0.7 };
+    expect(
+      selectHeroObjects([
+        obj({
+          id: "table",
+          ...strong,
+          recommendedRepresentation: "mesh",
+          bbox: [0.2, 0.6, 0.8, 1],
+        }),
+        obj({ id: "chair", ...fair, recommendedRepresentation: "splat" }),
+        obj({ id: "radio", ...strong, recommendedRepresentation: "splat" }),
+        obj({ id: "lamp", ...fair, recommendedRepresentation: "mesh" }),
+      ]).map((o) => o.id),
+    ).toEqual(["radio", "lamp"]);
   });
 
   it("picks the kettle in the demo room", () => {
@@ -150,3 +174,16 @@ describe("extras pipeline", () => {
 function fail(): never {
   throw new Error("expected extras");
 }
+
+describe("gemini boxes", () => {
+  it("converts box_2d [ymin, xmin, ymax, xmax] on 0-1000 to normalized bbox", async () => {
+    const { convertBoxes } = await import("@/lib/ai/providers/real/gemini");
+    const out = JSON.parse(
+      convertBoxes(
+        JSON.stringify({ objects: [{ id: "lamp", label: "lamp", box_2d: [100, 200, 500, 400] }] }),
+      ),
+    );
+    expect(out.objects[0].bbox).toEqual([0.2, 0.1, 0.4, 0.5]);
+    expect(out.objects[0].box_2d).toBeUndefined();
+  });
+});

@@ -1,12 +1,14 @@
 "use client";
 
 import { useGLTF } from "@react-three/drei";
-import { type ThreeEvent, useFrame } from "@react-three/fiber";
-import { Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { type ThreeEvent, useFrame, useThree } from "@react-three/fiber";
+import { type RefObject, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import type { BoundingBox } from "@/lib/analysis/schema";
 import type { OriginalCamera } from "@/lib/demo/memory";
+import { fixGeneratedMaterial, roomEnvironment } from "@/lib/world/materials";
 import type { Placement } from "@/lib/world/placement";
+import type { WorldFx } from "./fx";
 import type { Hole } from "./GaussianEnvironment";
 
 export interface PlacedObject {
@@ -20,6 +22,8 @@ export interface PlacedObject {
 
 interface Props {
   objects: PlacedObject[];
+  /** Objects appear with the world, never before it. */
+  fx: RefObject<WorldFx>;
   camera: OriginalCamera;
   onSelect: (id: string) => void;
   /** Reports the splat region each mesh now occupies, so it can be erased. */
@@ -30,7 +34,7 @@ interface Props {
 const CLICK_PX = 6;
 const HOVER_EMISSIVE = new THREE.Color("#ffe2b8");
 
-export function HeroObjects({ objects, camera, onSelect, onHoles }: Props) {
+export function HeroObjects({ objects, fx, camera, onSelect, onHoles }: Props) {
   const [holes, setHoles] = useState<Record<string, Hole>>({});
   const report = useRef(onHoles);
   report.current = onHoles;
@@ -45,6 +49,7 @@ export function HeroObjects({ objects, camera, onSelect, onHoles }: Props) {
         <Suspense key={o.id} fallback={null}>
           <HeroObject
             object={o}
+            fx={fx}
             camera={camera}
             onSelect={onSelect}
             onPlaced={(hole) => setHoles((h) => ({ ...h, [o.id]: hole }))}
@@ -57,16 +62,20 @@ export function HeroObjects({ objects, camera, onSelect, onHoles }: Props) {
 
 function HeroObject({
   object,
+  fx,
   camera,
   onSelect,
   onPlaced,
 }: {
   object: PlacedObject;
+  fx: RefObject<WorldFx>;
   camera: OriginalCamera;
   onSelect: (id: string) => void;
   onPlaced: (hole: Hole) => void;
 }) {
   const { scene } = useGLTF(object.glbUrl);
+  const gl = useThree((s) => s.gl);
+  const env = useMemo(() => roomEnvironment(gl), [gl]);
   const group = useRef<THREE.Group>(null);
   const hovered = useRef(false);
   const glow = useRef(0);
@@ -83,9 +92,11 @@ function HeroObject({
         ? mesh.material.map((m) => m.clone())
         : mesh.material.clone();
       for (const m of [mesh.material].flat()) {
+        fixGeneratedMaterial(m);
         if ((m as THREE.MeshStandardMaterial).isMeshStandardMaterial) {
           const std = m as THREE.MeshStandardMaterial;
           std.transparent = true;
+          std.envMap = env;
           materials.push(std);
         }
       }
@@ -102,28 +113,36 @@ function HeroObject({
     const toCamera = origin.clone().sub(placement.center);
     const yaw = Math.atan2(toCamera.x, toCamera.z);
     return { model, materials, transform: { scale, yaw, size: size.multiplyScalar(scale) } };
-  }, [scene, object, camera]);
+  }, [scene, object, camera, env]);
 
   const placed = useRef(onPlaced);
   placed.current = onPlaced;
   useEffect(() => {
+    // Erase the splat's own copy of the object, and nothing else: an ellipsoid hugging the mesh,
+    // shallow in depth (objects usually stand against walls) and lifted a little so the surface
+    // it rests on stays. Half extents; the mesh's own size is its full extent.
+    const { size } = transform;
     placed.current({
       id: object.id,
-      center: object.placement.center.clone(),
-      // A little larger than the mesh, so none of the old splat version shows around it.
-      size: transform.size.clone().multiplyScalar(0.8),
+      center: object.placement.center.clone().add(new THREE.Vector3(0, size.y * 0.06, 0)),
+      size: new THREE.Vector3(size.x * 0.52, size.y * 0.46, Math.min(size.z, size.x) * 0.38),
     });
   }, [object, transform]);
 
+  const opaque = useRef(false);
   useFrame((_, dt) => {
-    const wasFading = appear.current < 1;
     appear.current = Math.min(1, appear.current + dt / 1.2);
     glow.current += ((hovered.current ? 1 : 0) - glow.current) * Math.min(1, dt * 8);
+    const opacity = appear.current * fx.current.worldOpacity;
+    if (group.current) group.current.visible = opacity > 0.001;
+    // Fully in: render opaque, since transparent meshes sort badly against splats.
+    const nowOpaque = opacity >= 0.999;
+    const switched = nowOpaque !== opaque.current;
+    opaque.current = nowOpaque;
     for (const m of materials) {
-      m.opacity = appear.current;
-      // Once fully in, render opaque: transparent meshes sort badly against splats.
-      if (wasFading && appear.current >= 1) {
-        m.transparent = false;
+      m.opacity = opacity;
+      if (switched) {
+        m.transparent = !nowOpaque;
         m.needsUpdate = true;
       }
       m.emissive.copy(HOVER_EMISSIVE);

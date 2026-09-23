@@ -2,21 +2,24 @@
 // attaches the result to it. Spends fal (~$0.03 analysis + $0.375 per object) and ElevenLabs
 // credits (40/s). Usage: tsx --env-file=.env.local scripts/extras.ts <gallery_id>
 
+import { LocalStorage } from "../lib/ai/providers/local-storage";
 import { ElevenLabsAudioProvider } from "../lib/ai/providers/real/elevenlabs";
 import {
   FalClient,
-  FalHunyuanProvider,
+  FalMeshProvider,
   FalSegmentProvider,
   FalStorage,
   FalVisionProvider,
+  isMeshModel,
 } from "../lib/ai/providers/real/fal";
+import { GeminiVisionProvider } from "../lib/ai/providers/real/gemini";
 import { getGalleryEntry, updateGalleryExtras } from "../lib/gallery";
 import { cropToBox } from "../lib/pipeline/crop";
-import { advanceExtras, startExtras, toPublicExtras } from "../lib/pipeline/extras";
+import { advanceExtras, readExtras, startExtras, toPublicExtras } from "../lib/pipeline/extras";
 import { getStore } from "../lib/store";
 
 const [galleryId] = process.argv.slice(2);
-const { FAL_KEY, ELEVENLABS_API_KEY } = process.env;
+const { FAL_KEY, ELEVENLABS_API_KEY, GEMINI_API_KEY } = process.env;
 if (!galleryId || !FAL_KEY) throw new Error("usage: extras.ts <gallery_id> (needs FAL_KEY)");
 
 const store = getStore();
@@ -33,19 +36,35 @@ if (!entry.jobId) {
 }
 
 const fal = new FalClient(FAL_KEY);
-const storage = new FalStorage(FAL_KEY);
+// Same choices as the app: Gemini for vision when there's a key, local files with STORAGE=local.
+const storage = process.env.STORAGE === "local" ? new LocalStorage() : new FalStorage(FAL_KEY);
 const deps = {
   store,
-  vision: new FalVisionProvider(fal, process.env.VISION_MODEL || "anthropic/claude-sonnet-5"),
+  vision: GEMINI_API_KEY
+    ? new GeminiVisionProvider(GEMINI_API_KEY, process.env.GEMINI_MODEL || "gemini-flash-latest")
+    : new FalVisionProvider(fal, process.env.VISION_MODEL || "google/gemini-2.5-flash"),
   segment: new FalSegmentProvider(fal),
-  object3d: new FalHunyuanProvider(fal),
+  object3d: new FalMeshProvider(
+    fal,
+    isMeshModel(process.env.MESH_MODEL) ? process.env.MESH_MODEL : "trellis",
+  ),
   audio: ELEVENLABS_API_KEY ? new ElevenLabsAudioProvider(ELEVENLABS_API_KEY, storage) : null,
   storage,
   crop: cropToBox,
 };
 
-// The world's own copy of the photo is already public.
-await startExtras(store, jobId, { photoUrl: entry.photoUrl, share: true });
+// Resume if this memory already has extras (never pay twice); retry objects that failed.
+const existing = await readExtras(store, jobId);
+if (!existing) {
+  // The world's own copy of the photo is already public.
+  await startExtras(store, jobId, { photoUrl: entry.photoUrl, share: true });
+} else {
+  for (const o of existing.objects ?? []) {
+    if (o.state === "failed")
+      Object.assign(o, { state: "pending", error: undefined, meshHandle: undefined });
+  }
+  await store.set(`extras:${jobId}`, existing, 60 * 60 * 24 * 7);
+}
 for (let i = 0; ; i++) {
   const x = await advanceExtras(jobId, deps);
   if (!x) throw new Error("extras vanished");

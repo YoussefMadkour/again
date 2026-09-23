@@ -1,6 +1,6 @@
 "use client";
 
-import { Canvas } from "@react-three/fiber";
+import { Canvas, useFrame } from "@react-three/fiber";
 import type { SplatMesh } from "@sparkjsdev/spark";
 import { type RefObject, Suspense, useMemo, useRef, useState } from "react";
 import type { Memory } from "@/lib/demo/memory";
@@ -12,6 +12,11 @@ import { createWorldFx } from "./fx";
 import { GaussianEnvironment, type Hole } from "./GaussianEnvironment";
 import { HeroObjects, type PlacedObject } from "./HeroObjects";
 import { PhotoPlane } from "./PhotoPlane";
+import {
+  createProvenanceUniforms,
+  type ProvenanceUniforms,
+  setProvenanceCamera,
+} from "./provenance";
 import { type PlacedSound, SpatialAudio } from "./SpatialAudio";
 
 interface Props {
@@ -26,6 +31,13 @@ interface Props {
   onError: (error: unknown) => void;
   onEntered: () => void;
   onSelectObject: (id: string) => void;
+  /** 0 = MEMORY, 1 = DREAM. */
+  dream: number;
+  /** SPACE held: reveal provenance. */
+  revealing: boolean;
+  /** Input is ignored while an overlay is up. */
+  frozen: boolean;
+  onBeyond: () => void;
 }
 
 export default function MemoryWorld({
@@ -39,11 +51,20 @@ export default function MemoryWorld({
   onError,
   onEntered,
   onSelectObject,
+  dream,
+  revealing,
+  frozen,
+  onBeyond,
 }: Props) {
   const fx = useRef(createWorldFx());
   const capture = mode === "capture";
   const [splat, setSplat] = useState<SplatMesh | null>(null);
   const [holes, setHoles] = useState<Hole[]>([]);
+  const provenance = useMemo(() => {
+    const u = createProvenanceUniforms();
+    setProvenanceCamera(u, memory.originalCamera, memory.photoAspect);
+    return u;
+  }, [memory]);
   // Raycasting is the expensive part, and extras update on every poll: place each thing once.
   const placed = useRef(new Map<string, Placement | null>());
   const place = (id: string, bbox: Parameters<typeof placeBox>[3]) => {
@@ -103,7 +124,9 @@ export default function MemoryWorld({
         onError={onError}
         onMesh={setSplat}
         holes={holes}
+        provenance={capture ? undefined : provenance}
       />
+      <ProvenanceDriver uniforms={provenance} dream={dream} revealing={revealing} mode={mode} />
       {!capture && (
         <>
           <Suspense fallback={null}>
@@ -118,6 +141,7 @@ export default function MemoryWorld({
           <directionalLight position={[1.5, 3, 2]} intensity={1.4} />
           <HeroObjects
             objects={objects}
+            fx={fx}
             camera={memory.originalCamera}
             onSelect={onSelectObject}
             onHoles={setHoles}
@@ -132,7 +156,33 @@ export default function MemoryWorld({
         fx={fx}
         returnSignal={returnSignal}
         onEntered={onEntered}
+        frozen={frozen}
+        onBeyond={onBeyond}
+        photoAspect={memory.photoAspect}
       />
     </Canvas>
   );
+}
+
+/** Eases the MEMORY <-> DREAM and reveal values toward their targets, every frame. */
+function ProvenanceDriver({
+  uniforms,
+  dream,
+  revealing,
+  mode,
+}: {
+  uniforms: ProvenanceUniforms;
+  dream: number;
+  revealing: boolean;
+  mode: string;
+}) {
+  useFrame((_, dt) => {
+    // Before and during the entry the world is shown whole; the slider applies once inside.
+    const targetDream = mode === "exploring" ? dream : 1;
+    const targetReveal = mode === "exploring" && revealing ? 1 : 0;
+    const k = 1 - Math.exp(-dt * 5);
+    uniforms.dream.value += (targetDream - uniforms.dream.value) * k;
+    uniforms.reveal.value += (targetReveal - uniforms.reveal.value) * (1 - Math.exp(-dt * 4));
+  });
+  return null;
 }

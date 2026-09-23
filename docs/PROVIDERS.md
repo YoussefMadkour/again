@@ -6,9 +6,9 @@ implementation chosen by `AI_MODE` in `lib/ai/index.ts`. Provider calls are serv
 | Interface | Mock | Real | Status |
 |---|---|---|---|
 | `WorldProvider` | `providers/mock/world.ts`: demo splat after 9s | `providers/real/worldlabs.ts`: World Labs Marble | ✅ Milestone 2 |
-| `VisionProvider` | demo manifest | `FalVisionProvider`: Claude Sonnet 5 via fal's OpenRouter router | ✅ M3 |
+| `VisionProvider` | demo manifest | `GeminiVisionProvider` (Google AI Studio, photo inline, native box format); `FalVisionProvider` (Gemini via fal/OpenRouter) as fallback | ✅ M3 |
 | `SegmentProvider` | returns the hint | `FalSegmentProvider`: SAM 3, text prompt + nearest box | ✅ M3 |
-| `Object3DProvider` | demo `.glb` after 6s | `FalHunyuanProvider`: Hunyuan3D v3 image-to-3D (queued) | ✅ M3 |
+| `Object3DProvider` | demo `.glb` after 6s | `FalMeshProvider`: SAM 3 cutout → TRELLIS (default), TRELLIS 2 or Hunyuan3D v3 (`MESH_MODEL`) | ✅ M3 |
 | `AudioProvider` | demo `.mp3`s | `ElevenLabsAudioProvider`: sound effects v2, seamless loops | ✅ M3 |
 | `FileStorage` | none | `FalStorage` (fal CDN), or `LocalStorage` with `STORAGE=local` | ✅ M3 |
 
@@ -20,9 +20,9 @@ Providers for the extras are built in `lib/ai/extras.ts`. A missing key turns th
 | | Service | Cost |
 |---|---|---|
 | World | World Labs `marble-1.1` | 1,580 credits ≈ $1.26 |
-| Scene analysis | Claude Sonnet 5 via fal | ≈ $0.03 |
+| Scene analysis | Gemini Flash (Google AI Studio) | < $0.01 |
 | Object outlines | SAM 3 via fal | $0.005 each |
-| Hero objects (≤3) | Hunyuan3D v3 via fal | $0.375 each |
+| Hero objects (≤3) | SAM 3 cutout + TRELLIS via fal | ≈ $0.025 each |
 | Sound (1 ambient 15s + ≤2 positional 6s) | ElevenLabs, 40 credits/s | ≤ 1,080 credits |
 
 Visitors on their own World Labs key get the world only, because the extras bill the owner's
@@ -57,7 +57,7 @@ score it falls back to fov 50°, level.
 
 ```
 upload ─┬─► World Labs (world, ~5 min)
-        └─► after(): photo → fal CDN → vision (Claude) → scene manifest
+        └─► after(): photo → fal CDN → vision (Gemini) → scene manifest
                                               ├─► hero objects: score → SAM 3 box → crop → Hunyuan3D (queued)
                                               └─► sounds: 1 ambience + ≤2 positional → ElevenLabs → fal CDN
 ```
@@ -76,7 +76,28 @@ upload ─┬─► World Labs (world, ~5 min)
 - Sound is silent until STEP INSIDE (the click unlocks audio), faint while the photo is still
   up, and full once through it.
 
-**Not yet verified against live fal** (the account was out of balance while this was built):
-the vision, SAM 3 and Hunyuan3D calls follow fal's published schemas. The pipeline logic, mock
-providers, placement, evidence panel and ElevenLabs are verified. Once fal has balance:
-`tsx --env-file=.env.local scripts/extras.ts <gallery_id>`.
+Verified live end to end on the 1946 photo: Gemini analysis → SAM 3 box → crop → fal CDN →
+SAM 3 cutout → TRELLIS → placed in the world, plus ElevenLabs sound. To (re)run it on a gallery
+memory: `tsx --env-file=.env.local scripts/extras.ts <gallery_id>` (it resumes, never pays twice).
+
+## Choosing the image-to-3D model
+
+Compared on real crops (`scripts/compare-meshes.ts`, `/dev/mesh?files=...` to preview):
+
+| Model | Price | Time | Size | Verdict |
+|---|---|---|---|---|
+| `trellis` (fal-ai/trellis) | **$0.02** | 25-50s | ~1.3 MB | **Default.** Good once given a clean cutout and the material fix below |
+| `trellis-2` | $0.25 (512p) | ~90s | ~3 MB | Cleaner textures; the upgrade if quality matters more than cost |
+| `hunyuan3d-v3` | $0.375 | ~145s | **~33 MB** | Best geometry, but far too heavy to load next to a splat |
+
+What mattered more than the model:
+- **A cutout of just the object.** Every model reconstructs whatever is in the image, so
+  background left in a crop comes back as a slab. Generic background removal guesses "the
+  subject" and can get it backwards (on a painted room it kept the room and cut out the
+  kettle). SAM 3 cuts out the *named* object; BiRefNet is the fallback.
+- **Materials.** All of these export `metallicFactor: 1`. Without a metalness map (TRELLIS v1
+  has none) that's bare metal, which renders black. `lib/world/materials.ts` treats such
+  materials as non-metal and adds a locally generated studio environment for reflections.
+- **Erasing the splat under a mesh** must hug the object: a region as deep as the mesh cut
+  holes in the wall behind a sewing machine, and one reaching down cut into the table under
+  the lamp.

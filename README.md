@@ -20,15 +20,26 @@ Drop a photo, or choose **or enter a memory** for the demo. Press **STEP INSIDE*
 
 ## Status
 
-### Milestone 3 (understanding, objects, sound) ✅ (fal calls await a top-up)
+### Provenance (P7) ✅
 
-- The photo is read by a vision model (Claude Sonnet 5 via fal) into a scene manifest: objects,
+- **MEMORY ━━●━━ DREAM**: at MEMORY, space the photograph never saw fades to a dim fog.
+- **Hold SPACE**: observed (warm), inferred (the band just past the photo's edges), imagined
+  (cool), with a glowing seam where the photograph ends. Computed per splat on the GPU by
+  projecting it into the original camera.
+- The first time you turn well past the photograph: *"You are leaving the photographed
+  memory. Beyond this point, AGAIN. is imagining."* Once per session.
+- The demo is now the real 1946 living room: World Labs world, calibrated camera, TRELLIS
+  lamp and sewing machine, ElevenLabs sound, all baked locally (`scripts/bake-demo.ts`).
+
+### Milestone 3 (understanding, objects, sound) ✅
+
+- The photo is read by a vision model (Gemini) into a scene manifest: objects,
   boxes, mood, era, sound plan, uncertainties. It never identifies people.
-- Up to three **hero objects**, chosen deterministically, become Hunyuan3D meshes placed exactly
+- Up to three **hero objects**, chosen deterministically, become TRELLIS meshes ($0.02) placed exactly
   where the photo shows them. Click one to see where it came from: **observed here**.
 - **Sound**: an ElevenLabs ambience loop plus positional sounds at objects. Silent before you
   step inside, faint at the threshold, full inside. Toggle with "sound on/off".
-- The demo memory has all of it: a (placeholder) kettle and pre-generated sound.
+- Verified live: Gemini → SAM 3 → TRELLIS → placed in the world, with ElevenLabs sound.
 
 ### Access, own keys, gallery ✅
 

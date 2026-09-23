@@ -13,12 +13,14 @@ import {
 import { ElevenLabsAudioProvider } from "./providers/real/elevenlabs";
 import {
   FalClient,
-  FalHunyuanProvider,
+  FalMeshProvider,
   FalSegmentProvider,
   FalStorage,
   FalVisionProvider,
+  isMeshModel,
 } from "./providers/real/fal";
-import type { FileStorage } from "./types";
+import { GeminiVisionProvider } from "./providers/real/gemini";
+import type { FileStorage, VisionProvider } from "./types";
 
 /**
  * Providers for the scene analysis, hero objects and sound. A missing key turns that part
@@ -45,13 +47,32 @@ export function getExtrasDeps(): ExtrasDeps {
   return {
     store,
     vision:
-      fal && new FalVisionProvider(fal, process.env.VISION_MODEL || "anthropic/claude-sonnet-5"),
+      fal && new FalVisionProvider(fal, process.env.VISION_MODEL || "google/gemini-2.5-flash"),
     segment: fal && new FalSegmentProvider(fal),
-    object3d: fal && new FalHunyuanProvider(fal),
+    object3d: fal && new FalMeshProvider(fal, meshModel()),
     audio: elevenKey && storage ? new ElevenLabsAudioProvider(elevenKey, storage) : null,
     storage,
     crop: cropToBox,
   };
+}
+
+/** MESH_MODEL=trellis (default, $0.02) | trellis-2 ($0.25) | hunyuan3d-v3 ($0.375). */
+function meshModel() {
+  const name = process.env.MESH_MODEL;
+  return isMeshModel(name) ? name : "trellis";
+}
+
+/**
+ * Gemini direct when there's a Google AI Studio key (it takes the photo inline and boxes
+ * objects well), else a vision model through fal. VISION_PROVIDER=fal|gemini forces one.
+ */
+function visionProvider(fal: FalClient | null): VisionProvider | null {
+  const gemini = process.env.GEMINI_API_KEY;
+  const choice = process.env.VISION_PROVIDER ?? (gemini ? "gemini" : "fal");
+  if (choice === "gemini" && gemini) {
+    return new GeminiVisionProvider(gemini, process.env.GEMINI_MODEL || "gemini-flash-latest");
+  }
+  return fal && new FalVisionProvider(fal, process.env.VISION_MODEL || "google/gemini-2.5-flash");
 }
 
 /**

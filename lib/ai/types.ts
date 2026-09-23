@@ -37,6 +37,8 @@ export interface WorldResult {
   sourcePhotoUrl?: string;
   /** Equirectangular panorama the world was built from, used to find the photo's camera. */
   panoUrl?: string;
+  /** The photo's camera, when the provider knows it (skips calibration). */
+  camera?: { fov: number; pitch: number; yaw: number };
   metadata: {
     provider: string;
     worldId?: string;
@@ -73,8 +75,8 @@ export type MeshStatus =
   | { state: "failed"; error: string };
 
 export interface Object3DProvider {
-  /** Starts image-to-3D on an object crop. Returns an opaque handle to poll. */
-  submit(imageUrl: string): Promise<string>;
+  /** Starts image-to-3D on an object crop. `label` names the object (to cut it out). */
+  submit(imageUrl: string, label?: string): Promise<string>;
   poll(handle: string): Promise<MeshStatus>;
 }
 

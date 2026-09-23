@@ -27,11 +27,12 @@ depth-placed layers for a little parallax (exact from the front, flat from the s
 
 ## Next milestones
 
-- ~~**Milestone 3:** vision → scene manifest → hero objects + sound.~~ Done. Verify the live
-  fal calls once the account has balance, and replace the demo's placeholder kettle with a
-  real Hunyuan3D mesh.
+- ~~**Milestone 3:** vision → scene manifest → hero objects + sound.~~ Done and verified live.
+- Sounds generated with `STORAGE=local` live under `.data/files` (the 1946 gallery entry's do):
+  fine locally, but deployments need fal (or other public) storage.
 - A low, soft transition sound for the entry (spec §43).
-- **Provenance (P7):** MEMORY ↔ DREAM slider, hold SPACE to reveal provenance, the
-  "you are leaving the photographed memory" boundary.
+- ~~**Provenance (P7):** MEMORY ↔ DREAM, hold SPACE, the boundary moment.~~ Done. Next
+  refinement: occlusion (things hidden behind something in the photo count as observed today;
+  a coarse depth map from the original camera would mark them inferred).
 - **Before public launch:** Upstash Redis on Vercel, set `NEXT_PUBLIC_CONTACT_URL`, and a
   delete-my-memory action (World Labs `DELETE /worlds/{id}` + remove from gallery).

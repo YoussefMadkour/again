@@ -61,3 +61,41 @@ body {
     animation: none;
   }
 }
+
+/* MEMORY ━━●━━ DREAM: a hairline with a small bone knob. */
+.memory-dream {
+  appearance: none;
+  height: 16px;
+  background: transparent;
+  cursor: pointer;
+}
+.memory-dream::-webkit-slider-runnable-track {
+  height: 1px;
+  background: rgba(242, 240, 234, 0.35);
+}
+.memory-dream::-moz-range-track {
+  height: 1px;
+  background: rgba(242, 240, 234, 0.35);
+}
+.memory-dream::-webkit-slider-thumb {
+  appearance: none;
+  width: 11px;
+  height: 11px;
+  margin-top: -5px;
+  border-radius: 50%;
+  background: #f2f0ea;
+  box-shadow: 0 0 12px rgba(242, 240, 234, 0.6);
+}
+.memory-dream::-moz-range-thumb {
+  width: 11px;
+  height: 11px;
+  border: 0;
+  border-radius: 50%;
+  background: #f2f0ea;
+}
+.memory-dream:focus-visible {
+  outline: none;
+}
+.memory-dream:focus-visible::-webkit-slider-thumb {
+  box-shadow: 0 0 0 4px rgba(242, 240, 234, 0.25);
+}
