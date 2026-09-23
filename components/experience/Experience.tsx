@@ -2,9 +2,12 @@
 
 import { AnimatePresence, motion } from "framer-motion";
 import dynamic from "next/dynamic";
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import { DEMO_MEMORY, type Memory } from "@/lib/demo/memory";
 import {
+  type Access,
+  AccessError,
   buildMemory,
   forgetPending,
   MemoryError,
@@ -13,11 +16,16 @@ import {
   preparePhoto,
   recallPending,
   rememberPending,
+  saveCode,
+  savedCode,
   submitPhoto,
   waitForWorld,
 } from "@/lib/experience/memory-client";
 import { type ExperienceEvent, type ExperienceState, nextState } from "@/lib/experience/state";
+import type { GalleryCard } from "@/lib/gallery";
 import type { CardRect } from "@/lib/world/entry";
+import { type AccessOptions, AccessPanel } from "./AccessPanel";
+import { Gallery } from "./Gallery";
 import { PhotoDrop } from "./PhotoDrop";
 import { ProcessingCopy } from "./ProcessingCopy";
 
@@ -27,6 +35,8 @@ const EASE = [0.22, 1, 0.36, 1] as const;
 const LABEL = "font-mono text-[11px] lowercase tracking-[0.35em] text-bone/55";
 const QUIET_BUTTON =
   "pointer-events-auto font-mono text-[10px] lowercase tracking-[0.3em] text-bone/40 transition-colors duration-500 hover:text-bone/90 focus-visible:text-bone focus-visible:outline-none";
+const UUID = /^[0-9a-f-]{36}$/i;
+const GALLERY_ID = /^[0-9a-f]{16}$/i;
 
 function reducer(state: ExperienceState, event: ExperienceEvent) {
   return nextState(state, event);
@@ -37,16 +47,25 @@ interface Photo {
   aspect: number;
 }
 
-export function Experience() {
+interface Props {
+  gallery: GalleryCard[];
+  access: AccessOptions;
+}
+
+export function Experience({ gallery, access }: Props) {
+  const router = useRouter();
   const [state, dispatch] = useReducer(reducer, "idle");
   const [photo, setPhoto] = useState<Photo | null>(null);
   const [memory, setMemory] = useState<Memory | null>(null);
   const [worldLoaded, setWorldLoaded] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [returnSignal, setReturnSignal] = useState(0);
+  const [scrolled, setScrolled] = useState(false);
   const card = useRef<CardRect | null>(null);
   const photoEl = useRef<HTMLImageElement | null>(null);
   const job = useRef<AbortController | null>(null);
+  /** The photo waiting for an access code or key. */
+  const waiting = useRef<PreparedPhoto | null>(null);
 
   // --- The photograph's on-screen rect, which the 3D camera hands off from. ---
   const measure = useCallback(() => {
@@ -87,12 +106,12 @@ export function Experience() {
   }, []);
 
   const follow = useCallback(
-    async (jobId: string, prepared: PreparedPhoto) => {
+    async (jobId: string, prepared: PreparedPhoto, apiKey?: string) => {
       job.current?.abort();
       const controller = new AbortController();
       job.current = controller;
       try {
-        const world = await waitForWorld(jobId, controller.signal);
+        const world = await waitForWorld(jobId, controller.signal, apiKey);
         const built = await buildMemory(jobId, prepared, world);
         if (controller.signal.aborted) return;
         setMemory(built);
@@ -104,48 +123,99 @@ export function Experience() {
     [fail],
   );
 
-  const start = useCallback(
-    async (file: File) => {
+  const submit = useCallback(
+    async (prepared: PreparedPhoto, credentials: Access) => {
       setNotice(null);
       dispatch({ type: "UPLOAD" });
       try {
-        const prepared = await preparePhoto(file);
-        setPhoto({ url: prepared.url, aspect: prepared.aspect });
-        const jobId = await submitPhoto(prepared.blob);
-        await rememberPending(jobId, prepared);
+        const jobId = await submitPhoto(prepared.blob, credentials);
+        if (credentials.code) saveCode(credentials.code);
+        waiting.current = null;
+        await rememberPending(jobId, prepared, credentials.apiKey);
         dispatch({ type: "UPLOADED" });
-        await follow(jobId, prepared);
+        await follow(jobId, prepared, credentials.apiKey);
       } catch (error) {
+        if (error instanceof AccessError) {
+          if (credentials.code && error.status === 403) saveCode(null);
+          waiting.current = prepared;
+          setNotice(error.message);
+          dispatch({ type: "DENIED" });
+          return;
+        }
         fail(error);
       }
     },
     [follow, fail],
   );
 
-  // A reload mid-generation picks the same world back up instead of paying for a new one.
-  // `?world=<id>` reopens a world that already exists.
-  useEffect(() => {
-    const worldId = new URLSearchParams(window.location.search).get("world");
-    if (worldId && /^[0-9a-f-]{36}$/i.test(worldId)) {
+  const choose = useCallback(
+    async (file: File) => {
+      setNotice(null);
+      let prepared: PreparedPhoto;
+      try {
+        prepared = await preparePhoto(file);
+      } catch (error) {
+        setNotice(error instanceof MemoryError ? error.message : "this photo couldn't be read");
+        return;
+      }
+      setPhoto({ url: prepared.url, aspect: prepared.aspect });
+      if (access.requireCode) {
+        waiting.current = prepared;
+        dispatch({ type: "UNLOCK" });
+      } else {
+        await submit(prepared, { share: false });
+      }
+    },
+    [access.requireCode, submit],
+  );
+
+  const openExisting = useCallback(
+    (jobId: string) => {
       const controller = new AbortController();
+      job.current?.abort();
+      job.current = controller;
+      setNotice(null);
       dispatch({ type: "UPLOAD" });
-      openExistingWorld(worldId, controller.signal)
-        .then(({ jobId, photo: existing }) => {
+      openExistingWorld(jobId, controller.signal)
+        .then(({ photo: existing }) => {
           setPhoto({ url: existing.url, aspect: existing.aspect });
           dispatch({ type: "UPLOADED" });
           return follow(jobId, existing);
         })
         .catch(fail);
-      return () => controller.abort();
+    },
+    [follow, fail],
+  );
+
+  // `?memory=<gallery id>` and `?world=<world id>` open existing memories for free.
+  // Otherwise, a reload mid-generation picks the same job back up instead of paying again.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const galleryId = params.get("memory");
+    const worldId = params.get("world");
+    if (galleryId && GALLERY_ID.test(galleryId)) {
+      openExisting(`gallery_${galleryId}`);
+    } else if (worldId && UUID.test(worldId)) {
+      openExisting(`world_${worldId}`);
+    } else {
+      const pending = recallPending();
+      if (pending) {
+        setPhoto({ url: pending.photo.url, aspect: pending.photo.aspect });
+        dispatch({ type: "UPLOAD" });
+        dispatch({ type: "UPLOADED" });
+        void follow(pending.jobId, pending.photo, pending.apiKey);
+      }
     }
-    const pending = recallPending();
-    if (!pending) return;
-    setPhoto({ url: pending.photo.url, aspect: pending.photo.aspect });
-    dispatch({ type: "UPLOAD" });
-    dispatch({ type: "UPLOADED" });
-    void follow(pending.jobId, pending.photo);
     return () => job.current?.abort();
-  }, [follow, fail]);
+  }, [follow, openExisting]);
+
+  const openGallery = useCallback(
+    (id: string) => {
+      window.history.replaceState(null, "", `?memory=${id}`);
+      openExisting(`gallery_${id}`);
+    },
+    [openExisting],
+  );
 
   const openDemo = useCallback(() => {
     setNotice(null);
@@ -156,24 +226,29 @@ export function Experience() {
 
   const reset = useCallback(() => {
     job.current?.abort();
-    // Drop ?world= so "another memory" really starts fresh.
-    if (window.location.search) window.history.replaceState(null, "", window.location.pathname);
     forgetPending();
+    // Drop ?world= / ?memory= so "another memory" really starts fresh.
+    if (window.location.search) window.history.replaceState(null, "", window.location.pathname);
     if (photo?.url.startsWith("blob:")) URL.revokeObjectURL(photo.url);
+    waiting.current = null;
     setPhoto(null);
     setMemory(null);
     setWorldLoaded(false);
     setNotice(null);
     setReturnSignal(0);
+    setScrolled(false);
     card.current = null;
     dispatch({ type: "RESET" });
-  }, [photo]);
+    // Pick up memories shared since the page loaded (including, maybe, this one).
+    router.refresh();
+  }, [photo, router]);
 
   // --- Entering. ---
   const inWorld = state === "entering" || state === "exploring";
   const canEnter = state === "ready" && worldLoaded;
   const processing = state === "uploading" || state === "generating";
   const showWorld = memory && (state === "ready" || inWorld);
+  const idle = state === "idle";
 
   const stepInside = useCallback(() => {
     if (!canEnter) return;
@@ -207,78 +282,35 @@ export function Experience() {
         </div>
       )}
 
-      <div className="pointer-events-none absolute inset-0 z-10 flex flex-col items-center justify-center px-4">
-        <motion.header
-          className="absolute top-[9vh] flex flex-col items-center gap-3 text-center"
-          animate={{ opacity: inWorld ? 0 : 1, y: inWorld ? -8 : 0 }}
-          transition={{ duration: 0.6, ease: EASE }}
-        >
-          <h1 className="font-display text-[clamp(2.25rem,5vw,3.5rem)] leading-none tracking-[0.02em]">
-            AGAIN.
-          </h1>
-          <p className={LABEL}>step inside a memory</p>
-        </motion.header>
+      <motion.header
+        className="pointer-events-none absolute top-[9vh] left-1/2 z-20 flex -translate-x-1/2 flex-col items-center gap-3 text-center"
+        animate={{ opacity: inWorld || (idle && scrolled) ? 0 : 1, y: inWorld ? -8 : 0 }}
+        transition={{ duration: 0.6, ease: EASE }}
+      >
+        <h1 className="font-display text-[clamp(2.25rem,5vw,3.5rem)] leading-none tracking-[0.02em]">
+          AGAIN.
+        </h1>
+        <p className={`${LABEL} whitespace-nowrap`}>step inside a memory</p>
+      </motion.header>
 
-        <AnimatePresence mode="wait">
-          {!photo ? (
-            <motion.div key="drop" exit={{ opacity: 0, transition: { duration: 0.4 } }}>
-              <PhotoDrop onPhoto={start} onProblem={setNotice} />
-            </motion.div>
-          ) : (
-            <motion.div
-              key={photo.url}
-              className="relative"
-              initial={{ opacity: 0, scale: 0.985 }}
-              animate={{ opacity: inWorld ? 0 : 1, scale: 1 }}
-              exit={{ opacity: 0, transition: { duration: 0.4 } }}
-              transition={
-                inWorld
-                  ? { duration: 0.35, delay: 0.15, ease: "linear" }
-                  : { duration: 1.6, ease: EASE }
-              }
-            >
-              {/* Print border fades first so the bare image hands off to the canvas. */}
+      <AnimatePresence mode="wait">
+        {idle ? (
+          // Home: the drop zone fills the first screen; shared memories are below it.
+          <motion.div
+            key="home"
+            className="absolute inset-0 z-10 overflow-y-auto overscroll-contain"
+            onScroll={(e) => setScrolled(e.currentTarget.scrollTop > 40)}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0, transition: { duration: 0.4 } }}
+            data-testid="home"
+          >
+            <section className="relative flex h-[100svh] flex-col items-center justify-center px-4">
+              <PhotoDrop onPhoto={choose} onProblem={setNotice} />
               <motion.div
-                className="absolute -inset-[10px] bg-[#e9e5da] shadow-[0_30px_80px_rgba(0,0,0,0.6)]"
-                animate={{ opacity: inWorld ? 0 : 1 }}
-                transition={{ duration: 0.25 }}
-              />
-              {/* A slow breath while the world is being made; perfectly still once it's ready. */}
-              <motion.div
-                animate={processing ? { scale: [1, 1.012, 1] } : { scale: 1 }}
-                transition={
-                  processing
-                    ? { duration: 9, repeat: Number.POSITIVE_INFINITY, ease: "easeInOut" }
-                    : { duration: 0.8 }
-                }
-              >
-                {/* biome-ignore lint/performance/noImgElement: a plain img so its rect matches the 3D plane exactly */}
-                <img
-                  ref={photoRef}
-                  src={photo.url}
-                  alt="The photograph this memory is made from"
-                  onLoad={measure}
-                  draggable={false}
-                  className="relative block select-none"
-                  style={{
-                    height: `min(50vh, calc(78vw / ${photo.aspect}))`,
-                    aspectRatio: String(photo.aspect),
-                  }}
-                />
-              </motion.div>
-            </motion.div>
-          )}
-        </AnimatePresence>
-
-        <div className="absolute bottom-[10vh] flex h-28 flex-col items-center justify-end gap-5">
-          <AnimatePresence mode="wait">
-            {state === "idle" && (
-              <motion.div
-                key="idle"
-                className="flex flex-col items-center gap-4"
+                className="absolute bottom-[10vh] flex flex-col items-center gap-4"
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
-                exit={{ opacity: 0, transition: { duration: 0.3 } }}
                 transition={{ duration: 1.4, delay: 0.4 }}
               >
                 {notice && <p className={`${LABEL} text-bone/70`}>{notice}</p>}
@@ -286,78 +318,156 @@ export function Experience() {
                   or enter a memory
                 </button>
               </motion.div>
-            )}
-
-            {processing && (
-              <motion.div key="processing" exit={{ opacity: 0, transition: { duration: 0.4 } }}>
-                <ProcessingCopy phase={state} />
-              </motion.div>
-            )}
-
-            {state === "ready" && !worldLoaded && (
-              <motion.p
-                key="remembering"
-                className={LABEL}
-                initial={{ opacity: 0 }}
-                animate={{
-                  opacity: [0.35, 0.8, 0.35],
-                  transition: { duration: 2.4, repeat: Number.POSITIVE_INFINITY },
-                }}
-                exit={{ opacity: 0, transition: { duration: 0.4 } }}
-              >
-                remembering...
-              </motion.p>
-            )}
-
-            {canEnter && (
-              <motion.div
-                key="ready"
-                className="flex flex-col items-center gap-5"
-                initial={{ opacity: 0, y: 6 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, transition: { duration: 0.3 } }}
-                transition={{ duration: 1, ease: EASE }}
-              >
-                <p className={LABEL}>memory ready</p>
-                <button
-                  type="button"
-                  onClick={stepInside}
-                  className="pointer-events-auto border border-bone/30 px-8 py-3 font-mono text-[12px] uppercase tracking-[0.4em] text-bone transition-colors duration-500 hover:border-bone/80 hover:bg-bone/5 focus-visible:border-bone focus-visible:outline-none"
+              {gallery.length > 0 && (
+                <motion.p
+                  className="absolute bottom-6 font-mono text-[9px] lowercase tracking-[0.35em] text-bone/30"
+                  animate={{ opacity: scrolled ? 0 : 1 }}
                 >
-                  Step inside
-                </button>
-              </motion.div>
-            )}
-
-            {state === "error" && (
-              <motion.div
-                key="error"
-                className="flex flex-col items-center gap-5"
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-              >
-                <p className={`${LABEL} text-bone/70`}>
-                  {notice ?? "this memory couldn't be opened"}
-                </p>
-                <button type="button" onClick={reset} className={QUIET_BUTTON}>
-                  try another photo
-                </button>
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </div>
-
-        {(processing || state === "ready") && (
-          <button
-            type="button"
-            onClick={reset}
-            className={`${QUIET_BUTTON} absolute right-6 bottom-6`}
+                  other memories ↓
+                </motion.p>
+              )}
+            </section>
+            <Gallery cards={gallery} onOpen={openGallery} />
+          </motion.div>
+        ) : (
+          <motion.div
+            key="memory"
+            className="pointer-events-none absolute inset-0 z-10 flex flex-col items-center justify-center px-4"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ duration: 0.4 }}
           >
-            {processing ? "let go" : "another memory"}
-          </button>
+            {photo && (
+              <motion.div
+                key={photo.url}
+                className="relative"
+                initial={{ opacity: 0, scale: 0.985 }}
+                animate={{ opacity: inWorld ? 0 : 1, scale: 1 }}
+                transition={
+                  inWorld
+                    ? { duration: 0.35, delay: 0.15, ease: "linear" }
+                    : { duration: 1.6, ease: EASE }
+                }
+              >
+                {/* Print border fades first so the bare image hands off to the canvas. */}
+                <motion.div
+                  className="absolute -inset-[10px] bg-[#e9e5da] shadow-[0_30px_80px_rgba(0,0,0,0.6)]"
+                  animate={{ opacity: inWorld ? 0 : 1 }}
+                  transition={{ duration: 0.25 }}
+                />
+                {/* A slow breath while the world is being made; perfectly still once it's ready. */}
+                <motion.div
+                  animate={processing ? { scale: [1, 1.012, 1] } : { scale: 1 }}
+                  transition={
+                    processing
+                      ? { duration: 9, repeat: Number.POSITIVE_INFINITY, ease: "easeInOut" }
+                      : { duration: 0.8 }
+                  }
+                >
+                  {/* biome-ignore lint/performance/noImgElement: a plain img so its rect matches the 3D plane exactly */}
+                  <img
+                    ref={photoRef}
+                    src={photo.url}
+                    alt="The photograph this memory is made from"
+                    onLoad={measure}
+                    draggable={false}
+                    className="relative block select-none transition-[height] duration-700"
+                    style={{
+                      height: `min(${state === "unlocking" ? 40 : 50}vh, calc(78vw / ${photo.aspect}))`,
+                      aspectRatio: String(photo.aspect),
+                    }}
+                  />
+                </motion.div>
+              </motion.div>
+            )}
+
+            <div className="absolute bottom-[8vh] flex min-h-28 flex-col items-center justify-end gap-5">
+              <AnimatePresence mode="wait">
+                {state === "unlocking" && (
+                  <AccessPanel
+                    key="access"
+                    {...access}
+                    initialCode={savedCode()}
+                    notice={notice}
+                    onSubmit={(credentials) => {
+                      const prepared = waiting.current;
+                      if (prepared) void submit(prepared, credentials);
+                    }}
+                  />
+                )}
+
+                {processing && (
+                  <motion.div key="processing" exit={{ opacity: 0, transition: { duration: 0.4 } }}>
+                    <ProcessingCopy phase={state} />
+                  </motion.div>
+                )}
+
+                {state === "ready" && !worldLoaded && (
+                  <motion.p
+                    key="remembering"
+                    className={LABEL}
+                    initial={{ opacity: 0 }}
+                    animate={{
+                      opacity: [0.35, 0.8, 0.35],
+                      transition: { duration: 2.4, repeat: Number.POSITIVE_INFINITY },
+                    }}
+                    exit={{ opacity: 0, transition: { duration: 0.4 } }}
+                  >
+                    remembering...
+                  </motion.p>
+                )}
+
+                {canEnter && (
+                  <motion.div
+                    key="ready"
+                    className="flex flex-col items-center gap-5"
+                    initial={{ opacity: 0, y: 6 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, transition: { duration: 0.3 } }}
+                    transition={{ duration: 1, ease: EASE }}
+                  >
+                    <p className={LABEL}>memory ready</p>
+                    <button
+                      type="button"
+                      onClick={stepInside}
+                      className="pointer-events-auto border border-bone/30 px-8 py-3 font-mono text-[12px] uppercase tracking-[0.4em] text-bone transition-colors duration-500 hover:border-bone/80 hover:bg-bone/5 focus-visible:border-bone focus-visible:outline-none"
+                    >
+                      Step inside
+                    </button>
+                  </motion.div>
+                )}
+
+                {state === "error" && (
+                  <motion.div
+                    key="error"
+                    className="flex flex-col items-center gap-5"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                  >
+                    <p className={`${LABEL} text-bone/70`}>
+                      {notice ?? "this memory couldn't be opened"}
+                    </p>
+                    <button type="button" onClick={reset} className={QUIET_BUTTON}>
+                      try another photo
+                    </button>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+
+            {(processing || state === "ready" || state === "unlocking") && (
+              <button
+                type="button"
+                onClick={reset}
+                className={`${QUIET_BUTTON} absolute right-6 bottom-6`}
+              >
+                {processing ? "let go" : "another memory"}
+              </button>
+            )}
+          </motion.div>
         )}
-      </div>
+      </AnimatePresence>
 
       <AnimatePresence>
         {state === "exploring" && (

@@ -3,6 +3,8 @@
  */
 export type ExperienceState =
   | "idle"
+  /** A photo is chosen but needs an access code or the visitor's own key. */
+  | "unlocking"
   | "uploading"
   | "analyzing"
   | "generating"
@@ -12,8 +14,10 @@ export type ExperienceState =
   | "error";
 
 export type ExperienceEvent =
+  | { type: "UNLOCK" }
   | { type: "UPLOAD" }
   | { type: "UPLOADED" }
+  | { type: "DENIED" }
   | { type: "ANALYZED" }
   | { type: "GENERATED" }
   | { type: "DEMO" }
@@ -26,9 +30,11 @@ const transitions: Record<
   ExperienceState,
   Partial<Record<ExperienceEvent["type"], ExperienceState>>
 > = {
-  idle: { UPLOAD: "uploading", DEMO: "ready" },
+  idle: { UNLOCK: "unlocking", UPLOAD: "uploading", DEMO: "ready" },
+  unlocking: { UPLOAD: "uploading", RESET: "idle" },
   // No scene analysis yet (Milestone 3), so an upload goes straight to generating.
-  uploading: { UPLOADED: "generating", FAIL: "error", RESET: "idle" },
+  // DENIED: the code or key was refused, so ask again with the photo still on screen.
+  uploading: { UPLOADED: "generating", DENIED: "unlocking", FAIL: "error", RESET: "idle" },
   analyzing: { ANALYZED: "generating", FAIL: "error" },
   generating: { GENERATED: "ready", FAIL: "error", RESET: "idle" },
   ready: { STEP_INSIDE: "entering", RESET: "idle" },

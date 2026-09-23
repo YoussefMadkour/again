@@ -34,5 +34,42 @@ Check your balance (free): `curl https://api.worldlabs.ai/marble/v1/credits -H "
   stored with the world. Nothing is uploaded or generated.
 - `scripts/generate-world.ts <photo> [model]` generates from the command line (spends credits).
 
-⚠️ `/api/world` has no auth or rate limiting. Don't deploy with `AI_MODE=real` to a public URL
-without adding a gate, or anyone can spend your credits.
+## Access codes, visitors' own keys, rate limits
+
+In real mode, generating on **your** key needs an access code:
+
+```
+ACCESS_CODES=again-yours:*,trial-ana:1,judge-3:3   # code:limit, "*" = unlimited
+DAILY_GENERATION_LIMIT=3        # your key, everyone combined, per day
+IP_HOURLY_LIMIT=2               # your key, per visitor IP, per hour
+OWN_KEY_IP_HOURLY_LIMIT=10      # visitors using their own key, per IP, per hour
+NEXT_PUBLIC_CONTACT_URL=https://x.com/<you>   # "ask for a trial" link
+```
+
+- A code's quota is used when a generation **starts**. If World Labs refuses the request, it's
+  given back. Unlimited codes skip the IP and daily limits.
+- Wrong codes are limited to 10 guesses per IP per hour.
+- A code that worked is remembered on that device (localStorage).
+- **Visitors' own keys**: sent with their request, used only for that request, never stored on
+  the server or logged. The browser keeps it in sessionStorage for that tab, so a reload can
+  resume polling. They pay World Labs directly.
+- If `WORLDLABS_API_KEY` isn't set, the app only accepts visitors' own keys.
+
+Limits live in the store: Upstash Redis when `KV_REST_API_URL` / `KV_REST_API_TOKEN` are set
+(Vercel → Storage → Upstash), else `.data/store.json`. **On Vercel the app refuses to run without
+Redis**, because per-instance memory wouldn't enforce anything.
+
+## Gallery
+
+Opt-in per memory: the "add this memory to the public gallery" checkbox, off by default. The
+entry stores the world's public CDN URLs (photo, splat, panorama, thumbnail), so opening it at
+`/?memory=<id>` needs no key and costs nothing.
+
+```bash
+tsx --env-file=.env.local scripts/gallery.ts list
+tsx --env-file=.env.local scripts/gallery.ts add <world_id>       # one of your worlds
+tsx --env-file=.env.local scripts/gallery.ts remove <gallery_id>
+```
+
+Removing an entry hides it from the gallery. The world itself stays on World Labs' CDN, where
+anyone who already has its URL can still reach it.

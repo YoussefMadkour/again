@@ -20,6 +20,14 @@ Drop a photo, or choose **or enter a memory** for the demo. Press **STEP INSIDE*
 
 ## Status
 
+### Access, own keys, gallery ✅
+
+- Generating on the owner's key needs an **access code** (each with its own quota). "ask for a
+  trial" links to the owner's DMs. Or visitors paste **their own World Labs key**.
+- Rate limits per code, per IP per hour, and a global daily cap, in Upstash Redis (or a local file).
+- **Gallery** below the drop zone: memories whose makers opted in. Photo first, the world on
+  hover, free to open (`/?memory=<id>`).
+
 ### Milestone 2 (real photos) ✅
 
 - Drop a photo (jpg/png/webp, ≤15 MB). It's EXIF-rotated, downsized to 2048px and re-encoded

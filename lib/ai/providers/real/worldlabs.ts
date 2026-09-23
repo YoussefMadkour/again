@@ -14,6 +14,7 @@ interface World {
   world_prompt?: null | { image_prompt?: { uri?: string | null } | null };
   assets?: {
     caption?: string;
+    thumbnail_url?: string | null;
     imagery?: { pano_url?: string | null };
     splats?: {
       spz_urls?: Record<string, string>;
@@ -142,6 +143,7 @@ function toResult(world: World): WorldResult {
     format: "spz",
     metricScale: world.assets?.splats?.semantics_metadata?.metric_scale_factor ?? 1,
     panoUrl: world.assets?.imagery?.pano_url ?? undefined,
+    thumbnailUrl: world.assets?.thumbnail_url ?? undefined,
     sourcePhotoUrl: world.world_prompt?.image_prompt?.uri ?? undefined,
     metadata: {
       provider: "worldlabs",
