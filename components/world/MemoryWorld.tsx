@@ -43,6 +43,8 @@ export default function MemoryWorld({
     >
       <GaussianEnvironment
         url={memory.splatUrl}
+        upgradeUrl={memory.splatUpgradeUrl}
+        holdUpgrade={mode === "entering"}
         quaternion={memory.splatQuaternion}
         scale={memory.splatScale}
         fx={fx}

@@ -14,6 +14,8 @@ export interface Memory {
   /** width / height of the photograph. */
   photoAspect: number;
   splatUrl: string;
+  /** A sharper splat of the same world, faded in once it has loaded. */
+  splatUpgradeUrl?: string;
   /** Orientation fix applied to the splat (Marble exports are Y-down). */
   splatQuaternion: [number, number, number, number];
   /** Uniform scale about the origin (the photo's viewpoint), e.g. Marble's metric scale. */

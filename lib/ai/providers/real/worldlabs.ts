@@ -140,6 +140,7 @@ function toResult(world: World): WorldResult {
   return {
     splatUrl,
     splatUrlLowRes: urls["100k"],
+    splatUrlHighRes: urls.full_res && urls.full_res !== splatUrl ? urls.full_res : undefined,
     format: "spz",
     metricScale: world.assets?.splats?.semantics_metadata?.metric_scale_factor ?? 1,
     panoUrl: world.assets?.imagery?.pano_url ?? undefined,

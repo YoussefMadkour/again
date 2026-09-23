@@ -33,7 +33,7 @@ export function Gallery({ cards, onOpen }: Props) {
               type="button"
               onClick={() => onOpen(card.id)}
               className="group relative block aspect-[4/3] w-full overflow-hidden bg-ink outline-offset-4 focus-visible:outline focus-visible:outline-1 focus-visible:outline-bone/60"
-              aria-label="Step inside this memory"
+              aria-label="Open this memory"
               data-testid="gallery-card"
             >
               {/* biome-ignore lint/performance/noImgElement: remote CDN images, no optimizer needed */}

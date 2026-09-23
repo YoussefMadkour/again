@@ -56,7 +56,7 @@ Next (Milestone 3): vision model → scene manifest → hero objects (FAL) + amb
 | `pnpm lint` / `pnpm typecheck` | Biome / tsc |
 | `node scripts/capture-demo-photo.mjs` | re-render the demo photograph from the world (needs `pnpm dev`) |
 
-Docs: [`ARCHITECTURE`](docs/ARCHITECTURE.md) · [`PROVIDERS`](docs/PROVIDERS.md) · [`SWAP_TO_REAL`](docs/SWAP_TO_REAL.md) · [`DEMO`](docs/DEMO.md)
+Docs: [`ROADMAP`](docs/ROADMAP.md) · [`ARCHITECTURE`](docs/ARCHITECTURE.md) · [`PROVIDERS`](docs/PROVIDERS.md) · [`SWAP_TO_REAL`](docs/SWAP_TO_REAL.md) · [`DEMO`](docs/DEMO.md)
 
 Test photo: `tests/fixtures/living-room-1946.jpg`, Russell Lee for the U.S. Coal Mines
 Administration (NARA 540360, public domain), cropped.

@@ -18,7 +18,9 @@ implementation chosen by `AI_MODE` in `lib/ai/index.ts`. Provider calls are serv
 - Operation snapshots use `world_id` and **omit the panorama**; `GET /worlds/{id}` has it.
 - Splat, panorama and thumbnail URLs are on `cdn.marble.worldlabs.ai`. They're public, but the
   URLs are unguessable, and they send `Access-Control-Allow-Origin: *`, so Spark loads them directly.
-- Splats come as `100k`, `500k` and `full_res`. We use 500k on desktop and 100k on touch devices.
+- Splats come as `100k`, `500k` and `full_res` (~1.2 / 7 / 28 MB for a room). Touch devices get
+  100k. Desktops enter on 500k and cross-fade to `full_res` once it has loaded in the background,
+  so the memory is ready as fast as before.
 - The world's origin is the photo's viewpoint, looking down −Z (after the usual 180° X flip).
   The photo's field of view and tilt are **not** returned. See the calibration below.
 

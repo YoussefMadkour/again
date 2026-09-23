@@ -164,12 +164,15 @@ export async function buildMemory(
       console.warn("[again] calibration failed, using a typical camera", error);
     }
   }
+  // Phones get the light splat. Desktops enter on the 500k one and upgrade to full resolution
+  // in the background: sharper everywhere, without making "memory ready" wait for ~28 MB.
   const lowRes = world.splatUrlLowRes && window.matchMedia("(pointer: coarse)").matches;
   return {
     id: jobId,
     photoUrl: photo.url,
     photoAspect: photo.aspect,
     splatUrl: lowRes ? (world.splatUrlLowRes as string) : world.splatUrl,
+    splatUpgradeUrl: lowRes ? undefined : world.splatUrlHighRes,
     splatQuaternion: MARBLE_SPLAT_QUATERNION,
     // Scaling about the origin keeps the photo's viewpoint where it is.
     splatScale: world.metricScale,

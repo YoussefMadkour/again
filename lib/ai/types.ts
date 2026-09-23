@@ -24,6 +24,8 @@ export interface WorldResult {
   splatUrl: string;
   /** Lighter splat for mobile, when the provider has one. */
   splatUrlLowRes?: string;
+  /** Full-resolution splat (several times larger), swapped in on desktop once loaded. */
+  splatUrlHighRes?: string;
   format: "spz";
   /** Multiply splat units by this to get meters. */
   metricScale: number;
