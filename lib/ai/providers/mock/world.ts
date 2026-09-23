@@ -24,6 +24,7 @@ export class MockWorldProvider implements WorldProvider {
       state: "succeeded",
       result: {
         splatUrl: "/demo/painted-bedroom.spz",
+        sourcePhotoUrl: "/demo/photo.jpg",
         format: "spz",
         metricScale: 1,
         metadata: { provider: "mock", generatedAt: new Date(createdAt).toISOString() },

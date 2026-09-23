@@ -27,6 +27,8 @@ export interface WorldResult {
   format: "spz";
   /** Multiply splat units by this to get meters. */
   metricScale: number;
+  /** The photograph the world was made from, as the provider stored it. */
+  sourcePhotoUrl?: string;
   /** Equirectangular panorama the world was built from, used to find the photo's camera. */
   panoUrl?: string;
   metadata: {

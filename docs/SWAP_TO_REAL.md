@@ -30,7 +30,8 @@ Check your balance (free): `curl https://api.worldlabs.ai/marble/v1/credits -H "
 - `pnpm test:e2e` always runs its own server with `AI_MODE=mock` on port 3100, so tests never spend credits.
 - A generation in progress survives a page reload (the job id is kept in sessionStorage), so a
   reload never pays twice.
-- To reopen a world you already paid for, its id works as a job: `world_<world_id>`.
+- To reopen a world you already paid for, open `/?world=<world_id>`. It uses the photo World Labs
+  stored with the world. Nothing is uploaded or generated.
 - `scripts/generate-world.ts <photo> [model]` generates from the command line (spends credits).
 
 ⚠️ `/api/world` has no auth or rate limiting. Don't deploy with `AI_MODE=real` to a public URL

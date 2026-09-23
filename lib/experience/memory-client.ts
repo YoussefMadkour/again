@@ -79,6 +79,27 @@ export async function waitForWorld(jobId: string, signal: AbortSignal): Promise<
   }
 }
 
+/**
+ * Reopens a world that already exists (`?world=<id>`), using the photo the provider kept.
+ * Costs nothing: no upload, no generation.
+ */
+export async function openExistingWorld(
+  worldId: string,
+  signal: AbortSignal,
+): Promise<{ jobId: string; photo: PreparedPhoto }> {
+  const jobId = `world_${worldId}`;
+  const world = await waitForWorld(jobId, signal);
+  if (!world.sourcePhotoUrl) throw new MemoryError("this memory's photograph is missing");
+  const res = await fetch(world.sourcePhotoUrl, { signal });
+  if (!res.ok) throw new MemoryError("this memory's photograph couldn't be loaded");
+  // The CDN serves it as octet-stream; re-type it so it decodes as an image everywhere.
+  const blob = new Blob([await res.arrayBuffer()], { type: "image/jpeg" });
+  const bitmap = await createImageBitmap(blob);
+  const aspect = bitmap.width / bitmap.height;
+  bitmap.close();
+  return { jobId, photo: { blob, url: URL.createObjectURL(blob), aspect } };
+}
+
 /** Turns a generated world plus the user's photo into something the viewer can enter. */
 export async function buildMemory(
   jobId: string,

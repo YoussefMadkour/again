@@ -8,6 +8,7 @@ import {
   buildMemory,
   forgetPending,
   MemoryError,
+  openExistingWorld,
   type PreparedPhoto,
   preparePhoto,
   recallPending,
@@ -122,7 +123,21 @@ export function Experience() {
   );
 
   // A reload mid-generation picks the same world back up instead of paying for a new one.
+  // `?world=<id>` reopens a world that already exists.
   useEffect(() => {
+    const worldId = new URLSearchParams(window.location.search).get("world");
+    if (worldId && /^[0-9a-f-]{36}$/i.test(worldId)) {
+      const controller = new AbortController();
+      dispatch({ type: "UPLOAD" });
+      openExistingWorld(worldId, controller.signal)
+        .then(({ jobId, photo: existing }) => {
+          setPhoto({ url: existing.url, aspect: existing.aspect });
+          dispatch({ type: "UPLOADED" });
+          return follow(jobId, existing);
+        })
+        .catch(fail);
+      return () => controller.abort();
+    }
     const pending = recallPending();
     if (!pending) return;
     setPhoto({ url: pending.photo.url, aspect: pending.photo.aspect });
@@ -130,7 +145,7 @@ export function Experience() {
     dispatch({ type: "UPLOADED" });
     void follow(pending.jobId, pending.photo);
     return () => job.current?.abort();
-  }, [follow]);
+  }, [follow, fail]);
 
   const openDemo = useCallback(() => {
     setNotice(null);
@@ -141,6 +156,8 @@ export function Experience() {
 
   const reset = useCallback(() => {
     job.current?.abort();
+    // Drop ?world= so "another memory" really starts fresh.
+    if (window.location.search) window.history.replaceState(null, "", window.location.pathname);
     forgetPending();
     if (photo?.url.startsWith("blob:")) URL.revokeObjectURL(photo.url);
     setPhoto(null);

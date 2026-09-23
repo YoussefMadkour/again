@@ -11,6 +11,7 @@ export const EXISTING_WORLD = "world_";
 
 interface World {
   world_id: string;
+  world_prompt?: null | { image_prompt?: { uri?: string | null } | null };
   assets?: {
     caption?: string;
     imagery?: { pano_url?: string | null };
@@ -141,6 +142,7 @@ function toResult(world: World): WorldResult {
     format: "spz",
     metricScale: world.assets?.splats?.semantics_metadata?.metric_scale_factor ?? 1,
     panoUrl: world.assets?.imagery?.pano_url ?? undefined,
+    sourcePhotoUrl: world.world_prompt?.image_prompt?.uri ?? undefined,
     metadata: {
       provider: "worldlabs",
       worldId: world.world_id,
