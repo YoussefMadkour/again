@@ -14,6 +14,8 @@ export interface Store {
   /** Atomically adds `by` and returns the new value. The TTL is set on first write. */
   incr(key: string, ttlSeconds?: number, by?: number): Promise<number>;
   del(key: string): Promise<void>;
+  /** Sets `key` only if it's absent (a lock). True if this caller got it. */
+  claim(key: string, ttlSeconds: number): Promise<boolean>;
 }
 
 export class RedisStore implements Store {
@@ -53,6 +55,10 @@ export class RedisStore implements Store {
 
   async del(key: string) {
     await this.command("DEL", key);
+  }
+
+  async claim(key: string, ttlSeconds: number) {
+    return (await this.command<string | null>("SET", key, "1", "NX", "EX", ttlSeconds)) === "OK";
   }
 }
 
@@ -125,6 +131,16 @@ export class FileStore implements Store {
       await this.save(data);
     });
   }
+
+  claim(key: string, ttlSeconds: number) {
+    return this.serial(async () => {
+      const data = await this.load();
+      if (data[key]) return false;
+      data[key] = { value: 1, expiresAt: Date.now() + ttlSeconds * 1000 };
+      await this.save(data);
+      return true;
+    });
+  }
 }
 
 /** For tests. */
@@ -163,6 +179,12 @@ export class MemoryStore implements Store {
 
   async del(key: string) {
     this.data.delete(key);
+  }
+
+  async claim(key: string, ttlSeconds: number) {
+    if (this.live(key)) return false;
+    this.data.set(key, { value: 1, expiresAt: Date.now() + ttlSeconds * 1000 });
+    return true;
   }
 }
 

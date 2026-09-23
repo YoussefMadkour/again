@@ -27,8 +27,10 @@ depth-placed layers for a little parallax (exact from the front, flat from the s
 
 ## Next milestones
 
-- **Milestone 3:** vision model → scene manifest → hero objects (FAL Hunyuan3D) + ambient
-  audio (ElevenLabs). Needs `FAL_KEY`, `ELEVENLABS_API_KEY`, a vision provider key.
+- ~~**Milestone 3:** vision → scene manifest → hero objects + sound.~~ Done. Verify the live
+  fal calls once the account has balance, and replace the demo's placeholder kettle with a
+  real Hunyuan3D mesh.
+- A low, soft transition sound for the entry (spec §43).
 - **Provenance (P7):** MEMORY ↔ DREAM slider, hold SPACE to reveal provenance, the
   "you are leaving the photographed memory" boundary.
 - **Before public launch:** Upstash Redis on Vercel, set `NEXT_PUBLIC_CONTACT_URL`, and a

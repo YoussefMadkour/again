@@ -20,6 +20,16 @@ Drop a photo, or choose **or enter a memory** for the demo. Press **STEP INSIDE*
 
 ## Status
 
+### Milestone 3 (understanding, objects, sound) ✅ (fal calls await a top-up)
+
+- The photo is read by a vision model (Claude Sonnet 5 via fal) into a scene manifest: objects,
+  boxes, mood, era, sound plan, uncertainties. It never identifies people.
+- Up to three **hero objects**, chosen deterministically, become Hunyuan3D meshes placed exactly
+  where the photo shows them. Click one to see where it came from: **observed here**.
+- **Sound**: an ElevenLabs ambience loop plus positional sounds at objects. Silent before you
+  step inside, faint at the threshold, full inside. Toggle with "sound on/off".
+- The demo memory has all of it: a (placeholder) kettle and pre-generated sound.
+
 ### Access, own keys, gallery ✅
 
 - Generating on the owner's key needs an **access code** (each with its own quota). "ask for a

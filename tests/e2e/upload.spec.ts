@@ -41,6 +41,9 @@ test("an access code unlocks a memory, which can be shared to the gallery", asyn
   await expect(page.locator("main")).toHaveAttribute("data-state", "exploring", {
     timeout: 10_000,
   });
+  // The (mock) pipeline analysed the photo and delivered a hero object and sound.
+  await expect(page.getByText(/click what glows/)).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByRole("button", { name: "sound on" })).toBeVisible();
 
   // Back home, the shared memory is in the gallery, and opens for free.
   await page.getByRole("button", { name: "another memory" }).click();

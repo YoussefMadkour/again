@@ -1,35 +1,86 @@
 "use client";
 
 import { Canvas } from "@react-three/fiber";
-import { type RefObject, Suspense, useRef } from "react";
+import type { SplatMesh } from "@sparkjsdev/spark";
+import { type RefObject, Suspense, useMemo, useRef, useState } from "react";
 import type { Memory } from "@/lib/demo/memory";
+import type { PublicExtras } from "@/lib/pipeline/extras";
 import type { CardRect } from "@/lib/world/entry";
+import { type Placement, placeBox } from "@/lib/world/placement";
 import { CameraController, type WorldMode } from "./CameraController";
 import { createWorldFx } from "./fx";
-import { GaussianEnvironment } from "./GaussianEnvironment";
+import { GaussianEnvironment, type Hole } from "./GaussianEnvironment";
+import { HeroObjects, type PlacedObject } from "./HeroObjects";
 import { PhotoPlane } from "./PhotoPlane";
+import { type PlacedSound, SpatialAudio } from "./SpatialAudio";
 
 interface Props {
   memory: Memory;
+  /** Objects and sound, as they arrive. */
+  extras?: PublicExtras;
   mode: WorldMode;
   card: RefObject<CardRect | null>;
   returnSignal: number;
+  muted: boolean;
   onLoaded: () => void;
   onError: (error: unknown) => void;
   onEntered: () => void;
+  onSelectObject: (id: string) => void;
 }
 
 export default function MemoryWorld({
   memory,
+  extras,
   mode,
   card,
   returnSignal,
+  muted,
   onLoaded,
   onError,
   onEntered,
+  onSelectObject,
 }: Props) {
   const fx = useRef(createWorldFx());
   const capture = mode === "capture";
+  const [splat, setSplat] = useState<SplatMesh | null>(null);
+  const [holes, setHoles] = useState<Hole[]>([]);
+  // Raycasting is the expensive part, and extras update on every poll: place each thing once.
+  const placed = useRef(new Map<string, Placement | null>());
+  const place = (id: string, bbox: Parameters<typeof placeBox>[3]) => {
+    if (!splat) return null;
+    if (!placed.current.has(id)) {
+      const p = placeBox(splat, memory.originalCamera, memory.photoAspect, bbox);
+      placed.current.set(id, p);
+      console.info(
+        "[again] placed",
+        id,
+        p ? `${p.distance.toFixed(2)}m away` : "not found in the world",
+      );
+    }
+    return placed.current.get(id) ?? null;
+  };
+
+  // Place each finished object and sound where the photo shows it, by raycasting the splat.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: place() is cached per memory
+  const objects = useMemo<PlacedObject[]>(() => {
+    if (!splat || !extras) return [];
+    return extras.objects.flatMap((o) => {
+      if (o.state !== "done" || !o.glbUrl) return [];
+      const placement = place(o.id, o.bbox);
+      return placement ? [{ ...o, glbUrl: o.glbUrl, placement }] : [];
+    });
+  }, [splat, extras]);
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: place() is cached per memory
+  const sounds = useMemo<PlacedSound[]>(() => {
+    if (!extras) return [];
+    return extras.sounds.flatMap((s): PlacedSound[] => {
+      if (s.state !== "done" || !s.url) return [];
+      if (s.kind === "ambient" || !s.bbox) return [{ id: s.id, url: s.url, position: null }];
+      const placement = place(s.id, s.bbox);
+      return placement ? [{ id: s.id, url: s.url, position: placement.center }] : [];
+    });
+  }, [splat, extras]);
 
   return (
     <Canvas
@@ -50,16 +101,29 @@ export default function MemoryWorld({
         fx={fx}
         onLoaded={onLoaded}
         onError={onError}
+        onMesh={setSplat}
+        holes={holes}
       />
       {!capture && (
-        <Suspense fallback={null}>
-          <PhotoPlane
-            url={memory.photoUrl}
-            aspect={memory.photoAspect}
+        <>
+          <Suspense fallback={null}>
+            <PhotoPlane
+              url={memory.photoUrl}
+              aspect={memory.photoAspect}
+              camera={memory.originalCamera}
+              fx={fx}
+            />
+          </Suspense>
+          <ambientLight intensity={0.9} />
+          <directionalLight position={[1.5, 3, 2]} intensity={1.4} />
+          <HeroObjects
+            objects={objects}
             camera={memory.originalCamera}
-            fx={fx}
+            onSelect={onSelectObject}
+            onHoles={setHoles}
           />
-        </Suspense>
+          <SpatialAudio sounds={sounds} fx={fx} muted={muted} />
+        </>
       )}
       <CameraController
         mode={mode}

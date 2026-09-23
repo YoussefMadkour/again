@@ -1,3 +1,5 @@
+import type { BoundingBox, MemoryAnalysis } from "@/lib/analysis/schema";
+
 /**
  * Every paid external service sits behind one of these interfaces, with a mock and a real
  * implementation. Only the world provider exists so far (Milestone 2).
@@ -51,4 +53,44 @@ export type GenerationStatus =
 export interface WorldProvider {
   create(input: WorldGenerationInput): Promise<GenerationJob>;
   getStatus(jobId: string): Promise<GenerationStatus>;
+}
+
+// --- Milestone 3: scene analysis, hero objects, audio. ---
+
+export interface VisionProvider {
+  /** Reads the photograph into a scene manifest. `photoUrl` must be publicly fetchable. */
+  analyze(photoUrl: string): Promise<MemoryAnalysis>;
+}
+
+export interface SegmentProvider {
+  /** A tighter box for `label` near `hint`, or null when it can't find it. */
+  refineBox(photoUrl: string, label: string, hint: BoundingBox): Promise<BoundingBox | null>;
+}
+
+export type MeshStatus =
+  | { state: "pending" }
+  | { state: "succeeded"; glbUrl: string }
+  | { state: "failed"; error: string };
+
+export interface Object3DProvider {
+  /** Starts image-to-3D on an object crop. Returns an opaque handle to poll. */
+  submit(imageUrl: string): Promise<string>;
+  poll(handle: string): Promise<MeshStatus>;
+}
+
+export interface AudioGenerationInput {
+  prompt: string;
+  durationSeconds: number;
+  /** Seamless loop, for ambience beds. */
+  loop: boolean;
+}
+
+export interface AudioProvider {
+  /** Returns a public URL of the generated sound. */
+  generate(input: AudioGenerationInput): Promise<string>;
+}
+
+export interface FileStorage {
+  /** Stores bytes and returns a public, unguessable URL. */
+  upload(bytes: Uint8Array<ArrayBuffer>, contentType: string, fileName: string): Promise<string>;
 }

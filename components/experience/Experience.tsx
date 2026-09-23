@@ -4,6 +4,8 @@ import { AnimatePresence, motion } from "framer-motion";
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useReducer, useRef, useState } from "react";
+import { unlockAudio } from "@/components/world/SpatialAudio";
+import { DEMO_EXTRAS } from "@/lib/demo/extras";
 import { DEMO_MEMORY, type Memory } from "@/lib/demo/memory";
 import {
   type Access,
@@ -20,11 +22,14 @@ import {
   savedCode,
   submitPhoto,
   waitForWorld,
+  watchExtras,
 } from "@/lib/experience/memory-client";
 import { type ExperienceEvent, type ExperienceState, nextState } from "@/lib/experience/state";
 import type { GalleryCard } from "@/lib/gallery";
+import type { PublicExtras } from "@/lib/pipeline/extras";
 import type { CardRect } from "@/lib/world/entry";
 import { type AccessOptions, AccessPanel } from "./AccessPanel";
+import { EvidencePanel } from "./EvidencePanel";
 import { Gallery } from "./Gallery";
 import { PhotoDrop } from "./PhotoDrop";
 import { ProcessingCopy } from "./ProcessingCopy";
@@ -61,6 +66,10 @@ export function Experience({ gallery, access }: Props) {
   const [notice, setNotice] = useState<string | null>(null);
   const [returnSignal, setReturnSignal] = useState(0);
   const [scrolled, setScrolled] = useState(false);
+  const [extras, setExtras] = useState<PublicExtras | undefined>();
+  const [muted, setMuted] = useState(false);
+  /** The hero object whose photographic evidence is showing. */
+  const [evidence, setEvidence] = useState<string | null>(null);
   const card = useRef<CardRect | null>(null);
   const photoEl = useRef<HTMLImageElement | null>(null);
   const job = useRef<AbortController | null>(null);
@@ -111,11 +120,14 @@ export function Experience({ gallery, access }: Props) {
       const controller = new AbortController();
       job.current = controller;
       try {
-        const world = await waitForWorld(jobId, controller.signal, apiKey);
+        const { world, extras: first } = await waitForWorld(jobId, controller.signal, apiKey);
         const built = await buildMemory(jobId, prepared, world);
         if (controller.signal.aborted) return;
         setMemory(built);
+        setExtras(first);
         dispatch({ type: "GENERATED" });
+        // Objects and sound keep arriving after the world is ready.
+        if (first && !first.done) void watchExtras(jobId, controller.signal, setExtras, apiKey);
       } catch (error) {
         fail(error);
       }
@@ -221,6 +233,7 @@ export function Experience({ gallery, access }: Props) {
     setNotice(null);
     setPhoto({ url: DEMO_MEMORY.photoUrl, aspect: DEMO_MEMORY.photoAspect });
     setMemory(DEMO_MEMORY);
+    setExtras(DEMO_EXTRAS);
     dispatch({ type: "DEMO" });
   }, []);
 
@@ -233,6 +246,8 @@ export function Experience({ gallery, access }: Props) {
     waiting.current = null;
     setPhoto(null);
     setMemory(null);
+    setExtras(undefined);
+    setEvidence(null);
     setWorldLoaded(false);
     setNotice(null);
     setReturnSignal(0);
@@ -253,6 +268,8 @@ export function Experience({ gallery, access }: Props) {
   const stepInside = useCallback(() => {
     if (!canEnter) return;
     measure();
+    // The click is the user gesture browsers need before sound can play.
+    unlockAudio();
     dispatch({ type: "STEP_INSIDE" });
   }, [canEnter, measure]);
 
@@ -272,9 +289,12 @@ export function Experience({ gallery, access }: Props) {
           <MemoryWorld
             key={memory.id}
             memory={memory}
+            extras={extras}
             mode={inWorld ? state : "ready"}
             card={card}
             returnSignal={returnSignal}
+            muted={muted}
+            onSelectObject={(id) => state === "exploring" && setEvidence(id)}
             onLoaded={() => setWorldLoaded(true)}
             onError={(error) => fail(new MemoryError(`this world couldn't be opened (${error})`))}
             onEntered={() => dispatch({ type: "ENTERED" })}
@@ -471,8 +491,27 @@ export function Experience({ gallery, access }: Props) {
 
       <AnimatePresence>
         {state === "exploring" && (
-          <ExploreHud onReturn={() => setReturnSignal((n) => n + 1)} onLeave={reset} />
+          <ExploreHud
+            onReturn={() => setReturnSignal((n) => n + 1)}
+            onLeave={reset}
+            muted={muted}
+            onToggleSound={() => setMuted((m) => !m)}
+            hasSound={Boolean(extras?.sounds.some((s) => s.state === "done"))}
+            hasObjects={Boolean(extras?.objects.some((o) => o.state === "done"))}
+          />
         )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {evidence &&
+          photo &&
+          extras &&
+          (() => {
+            const object = extras.objects.find((o) => o.id === evidence);
+            return object ? (
+              <EvidencePanel photo={photo} object={object} onClose={() => setEvidence(null)} />
+            ) : null;
+          })()}
       </AnimatePresence>
 
       <div className="grain pointer-events-none absolute z-30" />
@@ -481,7 +520,21 @@ export function Experience({ gallery, access }: Props) {
   );
 }
 
-function ExploreHud({ onReturn, onLeave }: { onReturn: () => void; onLeave: () => void }) {
+function ExploreHud({
+  onReturn,
+  onLeave,
+  muted,
+  onToggleSound,
+  hasSound,
+  hasObjects,
+}: {
+  onReturn: () => void;
+  onLeave: () => void;
+  muted: boolean;
+  onToggleSound: () => void;
+  hasSound: boolean;
+  hasObjects: boolean;
+}) {
   const [hintVisible, setHintVisible] = useState(true);
   useEffect(() => {
     const id = setTimeout(() => setHintVisible(false), 7000);
@@ -503,7 +556,17 @@ function ExploreHud({ onReturn, onLeave }: { onReturn: () => void; onLeave: () =
         transition={{ duration: 1.5 }}
       >
         drag to look · wasd to move · esc to return
+        {hasObjects && " · click what glows"}
       </motion.p>
+      {hasSound && (
+        <button
+          type="button"
+          onClick={onToggleSound}
+          className={`${QUIET_BUTTON} absolute top-6 right-6`}
+        >
+          {muted ? "sound off" : "sound on"}
+        </button>
+      )}
       <button
         type="button"
         onClick={onLeave}

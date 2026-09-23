@@ -39,6 +39,8 @@ export function CaptureView() {
         mode="capture"
         card={card}
         returnSignal={0}
+        muted
+        onSelectObject={() => {}}
         onLoaded={() => setTimeout(() => setLoaded(true), 2500)}
         onError={(e) => console.error("capture: splat failed", e)}
         onEntered={() => {}}

@@ -2,6 +2,7 @@
 
 import type { GenerationStatus, WorldResult } from "@/lib/ai/types";
 import { MARBLE_SPLAT_QUATERNION, type Memory } from "@/lib/demo/memory";
+import type { PublicExtras } from "@/lib/pipeline/extras";
 import { photoProblem } from "@/lib/upload";
 import { calibrateFromPano } from "@/lib/world/calibrate-image";
 
@@ -102,23 +103,52 @@ export function saveCode(code: string | null) {
   }
 }
 
+type Status = GenerationStatus & { extras?: PublicExtras };
+
+async function fetchStatus(jobId: string, signal: AbortSignal, apiKey?: string): Promise<Status> {
+  const res = await fetch(`/api/world/${encodeURIComponent(jobId)}`, {
+    signal,
+    cache: "no-store",
+    headers: apiKey ? { "x-worldlabs-key": apiKey } : undefined,
+  });
+  if (res.status === 404) throw new MemoryError("this memory has expired");
+  return (await res.json()) as Status;
+}
+
+/**
+ * Objects and sound usually finish after the world. Keeps polling until they're all settled,
+ * reporting each update, so they can appear while someone is already inside.
+ */
+export async function watchExtras(
+  jobId: string,
+  signal: AbortSignal,
+  onUpdate: (extras: PublicExtras) => void,
+  apiKey?: string,
+) {
+  for (;;) {
+    await sleep(POLL_MS, signal);
+    try {
+      const { extras } = await fetchStatus(jobId, signal, apiKey);
+      if (!extras) return;
+      onUpdate(extras);
+      if (extras.done) return;
+    } catch (error) {
+      if ((error as Error).name === "AbortError" || error instanceof MemoryError) return;
+    }
+  }
+}
+
 /** Resolves when the world exists. Network hiccups are retried; only a real failure rejects. */
 export async function waitForWorld(
   jobId: string,
   signal: AbortSignal,
   apiKey?: string,
-): Promise<WorldResult> {
+): Promise<{ world: WorldResult; extras?: PublicExtras }> {
   for (;;) {
     if (signal.aborted) throw new DOMException("aborted", "AbortError");
     try {
-      const res = await fetch(`/api/world/${encodeURIComponent(jobId)}`, {
-        signal,
-        cache: "no-store",
-        headers: apiKey ? { "x-worldlabs-key": apiKey } : undefined,
-      });
-      if (res.status === 404) throw new MemoryError("this memory has expired");
-      const status = (await res.json()) as GenerationStatus;
-      if (status.state === "succeeded") return status.result;
+      const status = await fetchStatus(jobId, signal, apiKey);
+      if (status.state === "succeeded") return { world: status.result, extras: status.extras };
       if (status.state === "failed") throw new MemoryError("this memory couldn't be reconstructed");
     } catch (error) {
       if (error instanceof MemoryError || (error as Error).name === "AbortError") throw error;
@@ -136,7 +166,7 @@ export async function openExistingWorld(
   jobId: string,
   signal: AbortSignal,
 ): Promise<{ jobId: string; photo: PreparedPhoto }> {
-  const world = await waitForWorld(jobId, signal);
+  const { world } = await waitForWorld(jobId, signal);
   if (!world.sourcePhotoUrl) throw new MemoryError("this memory's photograph is missing");
   const res = await fetch(world.sourcePhotoUrl, { signal });
   if (!res.ok) throw new MemoryError("this memory's photograph couldn't be loaded");

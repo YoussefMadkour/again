@@ -4,6 +4,7 @@
  */
 import type { WorldResult } from "./ai/types";
 import { randomId } from "./id";
+import type { PublicExtras } from "./pipeline/extras";
 import type { Store } from "./store";
 
 export interface GalleryEntry {
@@ -14,6 +15,9 @@ export interface GalleryEntry {
   /** A render of the generated world, shown on hover. */
   thumbnailUrl?: string;
   world: WorldResult;
+  /** The generation job, so objects and sounds can be attached when they finish. */
+  jobId?: string;
+  extras?: PublicExtras;
 }
 
 /** What the homepage needs; the world assets are fetched only when an entry is opened. */
@@ -38,7 +42,11 @@ export async function getGalleryEntry(store: Store, id: string) {
   return (await listGallery(store)).find((e) => e.id === id) ?? null;
 }
 
-export async function addToGallery(store: Store, world: WorldResult): Promise<GalleryEntry | null> {
+export async function addToGallery(
+  store: Store,
+  world: WorldResult,
+  extra: { jobId?: string; extras?: PublicExtras } = {},
+): Promise<GalleryEntry | null> {
   if (!world.sourcePhotoUrl) return null;
   const entries = await listGallery(store);
   const existing = entries.find(
@@ -51,9 +59,18 @@ export async function addToGallery(store: Store, world: WorldResult): Promise<Ga
     photoUrl: world.sourcePhotoUrl,
     thumbnailUrl: world.thumbnailUrl,
     world,
+    ...extra,
   };
   await store.set(KEY, [entry, ...entries].slice(0, MAX_ENTRIES));
   return entry;
+}
+
+export async function updateGalleryExtras(store: Store, jobId: string, extras: PublicExtras) {
+  const entries = await listGallery(store);
+  const entry = entries.find((e) => e.jobId === jobId);
+  if (!entry) return;
+  entry.extras = extras;
+  await store.set(KEY, entries);
 }
 
 export async function removeFromGallery(store: Store, id: string): Promise<boolean> {

@@ -22,6 +22,7 @@
     "react-dom": "^19.3.0",
     "react-dropzone": "^20.1.2",
     "server-only": "^0.0.1",
+    "sharp": "^0.35.4",
     "three": "~0.180.0",
     "zod": "^4.6.5"
   },

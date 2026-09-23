@@ -36,3 +36,29 @@ test("demo memory → step inside → world → look and move → return", async
   await page.getByRole("button", { name: /return to photo/i }).isVisible();
   expect(errors).toEqual([]);
 });
+
+test("a hero object shows where it came from in the photograph", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: /enter a memory/i }).click();
+  const step = page.getByRole("button", { name: /^step inside$/i });
+  await expect(step).toBeVisible({ timeout: 90_000 });
+  await step.click();
+  await expect(page.locator("main")).toHaveAttribute("data-state", "exploring", {
+    timeout: 10_000,
+  });
+  await expect(page.getByText(/click what glows/)).toBeVisible();
+  await expect(page.getByRole("button", { name: "sound on" })).toBeVisible();
+
+  // The demo kettle sits at about (620, 495) at 1440x900 right after entering.
+  await page.waitForTimeout(2500);
+  await page.mouse.move(620, 495, { steps: 4 });
+  await expect.poll(() => page.evaluate(() => document.body.style.cursor)).toBe("pointer");
+  await page.mouse.click(620, 495);
+  await expect(page.getByTestId("evidence")).toBeVisible();
+  await expect(page.getByText("observed here")).toBeVisible();
+  await expect(page.getByText("blue kettle")).toBeVisible();
+
+  await page.keyboard.press("Escape");
+  await expect(page.getByTestId("evidence")).toBeHidden();
+  await expect(page.locator("main")).toHaveAttribute("data-state", "exploring");
+});

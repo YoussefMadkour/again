@@ -1,8 +1,16 @@
 "use client";
 
 import { useFrame, useThree } from "@react-three/fiber";
-import { SparkRenderer, SplatMesh } from "@sparkjsdev/spark";
-import { type RefObject, useEffect, useRef } from "react";
+import {
+  SparkRenderer,
+  SplatEdit,
+  SplatEditRgbaBlendMode,
+  SplatEditSdf,
+  SplatEditSdfType,
+  SplatMesh,
+} from "@sparkjsdev/spark";
+import { type RefObject, useEffect, useRef, useState } from "react";
+import * as THREE from "three";
 import type { WorldFx } from "./fx";
 
 interface Props {
@@ -16,6 +24,17 @@ interface Props {
   fx: RefObject<WorldFx>;
   onLoaded: () => void;
   onError: (error: unknown) => void;
+  /** The loaded base splat, for raycasting (placing objects and sounds). */
+  onMesh?: (mesh: SplatMesh) => void;
+  /** Regions to erase from the splat, where a hero mesh now stands. World space. */
+  holes?: Hole[];
+}
+
+export interface Hole {
+  id: string;
+  center: THREE.Vector3;
+  /** Half extents. */
+  size: THREE.Vector3;
 }
 
 const UPGRADE_FADE_S = 1.2;
@@ -37,14 +56,17 @@ export function GaussianEnvironment({
   fx,
   onLoaded,
   onError,
+  onMesh,
+  holes = [],
 }: Props) {
   const gl = useThree((s) => s.gl);
   const scene = useThree((s) => s.scene);
   const base = useRef<SplatMesh | null>(null);
   const upgrade = useRef<{ mesh: SplatMesh; blend: number; ready: boolean } | null>(null);
   const baseLoaded = useRef(false);
-  const callbacks = useRef({ onLoaded, onError });
-  callbacks.current = { onLoaded, onError };
+  const [upgradeReady, setUpgradeReady] = useState(false);
+  const callbacks = useRef({ onLoaded, onError, onMesh });
+  callbacks.current = { onLoaded, onError, onMesh };
 
   const [qx, qy, qz, qw] = quaternion;
 
@@ -63,6 +85,9 @@ export function GaussianEnvironment({
         if (disposed) return;
         baseLoaded.current = true;
         callbacks.current.onLoaded();
+        void whenRaycastable(mesh, () => disposed).then((ok) => {
+          if (ok && !disposed) callbacks.current.onMesh?.(mesh);
+        });
       })
       .catch((error: unknown) => {
         if (!disposed) callbacks.current.onError(error);
@@ -84,6 +109,21 @@ export function GaussianEnvironment({
     };
   }, [gl, scene, url, qx, qy, qz, qw, scale]);
 
+  // Erase the splat where hero meshes stand, on every splat of this world.
+  const holeKey = holes.map((h) => h.id).join(",");
+  // biome-ignore lint/correctness/useExhaustiveDependencies: holes are keyed by id
+  useEffect(() => {
+    const meshes = [base.current, upgrade.current?.mesh].filter(Boolean) as SplatMesh[];
+    const edits = meshes.map((mesh) => {
+      const edit = eraseEdit(mesh, holes);
+      mesh.add(edit);
+      return { mesh, edit };
+    });
+    return () => {
+      for (const { mesh, edit } of edits) mesh.remove(edit);
+    };
+  }, [holeKey, upgradeReady]);
+
   useFrame((_, dt) => {
     const world = fx.current.worldOpacity;
 
@@ -96,6 +136,7 @@ export function GaussianEnvironment({
       mesh.initialized
         .then(() => {
           entry.ready = true;
+          setUpgradeReady(true);
           console.info("[again] full-resolution world loaded");
         })
         .catch((error: unknown) => {
@@ -131,4 +172,33 @@ function createMesh(url: string, [x, y, z, w]: [number, number, number, number],
   mesh.scale.setScalar(scale);
   mesh.opacity = 0;
   return mesh;
+}
+
+/** An edit that multiplies splat opacity by zero inside each hole (in the mesh's own space). */
+function eraseEdit(mesh: SplatMesh, holes: Hole[]) {
+  const edit = new SplatEdit({ rgbaBlendMode: SplatEditRgbaBlendMode.MULTIPLY, softEdge: 0.04 });
+  const scale = mesh.scale.x || 1;
+  mesh.updateMatrixWorld(true);
+  for (const hole of holes) {
+    const sdf = new SplatEditSdf({ type: SplatEditSdfType.ELLIPSOID, opacity: 0 });
+    sdf.position.copy(mesh.worldToLocal(hole.center.clone()));
+    sdf.scale.copy(hole.size).divideScalar(scale);
+    edit.addSdf(sdf);
+    edit.add(sdf);
+  }
+  return edit;
+}
+
+/**
+ * Spark's raycaster runs in a WebAssembly module that can finish initializing a moment after
+ * the splat reports loaded. Probe until a ray straight ahead hits something (or give up).
+ */
+async function whenRaycastable(mesh: SplatMesh, cancelled: () => boolean) {
+  const raycaster = new THREE.Raycaster(new THREE.Vector3(), new THREE.Vector3(0, 0, -1));
+  for (let i = 0; i < 40 && !cancelled(); i++) {
+    mesh.updateMatrixWorld(true);
+    if (raycaster.intersectObject(mesh, false).length > 0) return true;
+    await new Promise((r) => setTimeout(r, 250));
+  }
+  return false;
 }

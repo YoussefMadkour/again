@@ -1,9 +1,11 @@
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
 import { accessPolicyFromEnv, authorizeGeneration, clientIp } from "@/lib/access";
 import { getWorldProvider } from "@/lib/ai";
+import { extrasAllowed, getExtrasDeps, getFileStorage } from "@/lib/ai/extras";
 import { WorldLabsError } from "@/lib/ai/providers/real/worldlabs";
 import { type JobRecord, jobKey } from "@/lib/gallery";
 import { randomId } from "@/lib/id";
+import { advanceExtras, startExtras } from "@/lib/pipeline/extras";
 import { getStore } from "@/lib/store";
 import { ACCEPTED_PHOTO_TYPES, type AcceptedPhotoType, photoProblem } from "@/lib/upload";
 
@@ -39,16 +41,21 @@ export async function POST(req: Request) {
   );
   if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });
 
+  const bytes = new Uint8Array(await photo.arrayBuffer());
   try {
     const job = await provider.create({
       image: {
-        bytes: new Uint8Array(await photo.arrayBuffer()),
+        bytes,
         extension: ACCEPTED_PHOTO_TYPES[photo.type as AcceptedPhotoType],
       },
       displayName: `again-${randomId(6)}`,
     });
     const record: JobRecord = { share };
     await store.set(jobKey(job.jobId), record, 60 * 60 * 24 * 2);
+    if (extrasAllowed(access.usage)) {
+      // Scene analysis, hero objects and sound start now, in parallel with the world.
+      after(() => beginExtras(job.jobId, bytes, photo.type, share));
+    }
     return NextResponse.json({ ...job, remaining: access.remaining });
   } catch (error) {
     await access.release();
@@ -67,4 +74,35 @@ export async function POST(req: Request) {
     }
     return NextResponse.json({ error: "could not start this memory" }, { status: 502 });
   }
+}
+
+async function beginExtras(
+  jobId: string,
+  bytes: Uint8Array<ArrayBuffer>,
+  type: string,
+  share: boolean,
+) {
+  const store = getStore();
+  let photoUrl: string | null = null;
+  if (process.env.AI_MODE !== "real") {
+    photoUrl = "mock://photo";
+  } else {
+    // The vision and 3D models fetch the photo by URL, so it needs a public, unguessable one.
+    const storage = getFileStorage();
+    photoUrl = storage
+      ? await storage
+          .upload(bytes, type, `photo-${randomId(8)}.${type.split("/")[1] ?? "jpg"}`)
+          .catch((error: unknown) => {
+            console.error(
+              "[extras] photo upload failed",
+              error instanceof Error ? error.message : error,
+            );
+            return null;
+          })
+      : null;
+  }
+  await startExtras(store, jobId, { photoUrl, share });
+  await advanceExtras(jobId, getExtrasDeps()).catch((error: unknown) =>
+    console.error("[extras] advance failed", error instanceof Error ? error.message : error),
+  );
 }
