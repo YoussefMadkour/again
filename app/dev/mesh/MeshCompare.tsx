@@ -1,6 +1,6 @@
 "use client";
 
-import { Bounds, Center, useGLTF } from "@react-three/drei";
+import { Bounds, Center, OrbitControls, useGLTF } from "@react-three/drei";
 import { Canvas, useThree } from "@react-three/fiber";
 import { Suspense, useMemo, useState } from "react";
 import type * as THREE from "three";
@@ -50,6 +50,8 @@ export function MeshCompare() {
             <Suspense fallback={null}>
               <Model url={`/api/files/${f}`} angle={angle} />
             </Suspense>
+            {/* Drag to orbit, scroll to zoom. */}
+            <OrbitControls makeDefault enablePan={false} />
           </Canvas>
           <p
             style={{ position: "absolute", top: 8, left: 8, font: "12px monospace", color: "#222" }}
