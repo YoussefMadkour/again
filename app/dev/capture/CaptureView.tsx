@@ -18,6 +18,7 @@ export function CaptureView() {
     const cam = DEMO_MEMORY.originalCamera;
     return {
       ...DEMO_MEMORY,
+      splatUrl: q.get("splat") ?? DEMO_MEMORY.splatUrl,
       originalCamera: {
         position: parse(q.get("pos")) ?? cam.position,
         rotation: parse(q.get("rot")) ?? cam.rotation,
@@ -26,8 +27,13 @@ export function CaptureView() {
     };
   });
 
+  const [size] = useState(() => {
+    const q = new URLSearchParams(typeof window === "undefined" ? "" : window.location.search);
+    return { width: Number(q.get("w") ?? 1600), height: Number(q.get("h") ?? 1200) };
+  });
+
   return (
-    <div style={{ width: 1600, height: 1200, background: "#000" }} data-loaded={loaded}>
+    <div style={{ ...size, background: "#000" }} data-loaded={loaded}>
       <MemoryWorld
         memory={memory}
         mode="capture"

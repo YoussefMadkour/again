@@ -6,10 +6,10 @@
 
 ```bash
 pnpm install
-pnpm dev          # http://localhost:3000, no API keys needed
+pnpm dev          # http://localhost:3000, mock mode, no API keys needed
 ```
 
-Press **STEP INSIDE** (or Enter). Then:
+Drop a photo, or choose **or enter a memory** for the demo. Press **STEP INSIDE** (or Enter). Then:
 
 | Input | Does |
 |---|---|
@@ -18,22 +18,37 @@ Press **STEP INSIDE** (or Enter). Then:
 | scroll | drift forward / back |
 | Esc | return to the photograph's viewpoint |
 
-## Status: Milestone 1 (vertical slice) ✅
+## Status
+
+### Milestone 2 (real photos) ✅
+
+- Drop a photo (jpg/png/webp, ≤15 MB). It's EXIF-rotated, downsized to 2048px and re-encoded
+  (which strips GPS metadata), then sent to World Labs Marble.
+- Processing keeps the photo on screen with experiential copy, not progress bars.
+- When the world arrives, the photo's original camera is **recovered automatically** from
+  Marble's panorama, so the photo lines up with its world at the crossing.
+- A generation survives a reload. "or enter a memory" opens the demo.
+- `AI_MODE=mock` (default) runs the whole flow with no keys. See [`docs/SWAP_TO_REAL.md`](docs/SWAP_TO_REAL.md).
+
+### Milestone 1 (vertical slice) ✅
 
 - Demo memory renders: pre-generated World Labs Marble `.spz` → Spark → Three.js / R3F
 - The entry transition: DOM print → 3D photo plane (pixel-matched handoff) → camera approaches → world opens around the photo's feathered edges → photo dissolves as the camera crosses its plane → free camera
 - Single screen, state machine (no routes)
 - Return to photo (Esc / button) lays the photograph back over the world at the original viewpoint
 
-Next (Milestone 2): real upload → World Labs → `.spz` → this same viewer.
+Next (Milestone 3): vision model → scene manifest → hero objects (FAL) + ambient audio (ElevenLabs).
 
 ## Scripts
 
 | | |
 |---|---|
 | `pnpm test` | unit tests (state machine, entry choreography, handoff geometry) |
-| `pnpm test:e2e` | Playwright: photo → step inside → world → look/move → return (uses system Chrome for GPU WebGL) |
+| `pnpm test:e2e` | Playwright: upload → processing → ready → step inside → move → return. Own server on :3100, always mock. System Chrome for GPU WebGL |
 | `pnpm lint` / `pnpm typecheck` | Biome / tsc |
 | `node scripts/capture-demo-photo.mjs` | re-render the demo photograph from the world (needs `pnpm dev`) |
 
-See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) and [`docs/DEMO.md`](docs/DEMO.md).
+Docs: [`ARCHITECTURE`](docs/ARCHITECTURE.md) · [`PROVIDERS`](docs/PROVIDERS.md) · [`SWAP_TO_REAL`](docs/SWAP_TO_REAL.md) · [`DEMO`](docs/DEMO.md)
+
+Test photo: `tests/fixtures/living-room-1946.jpg`, Russell Lee for the U.S. Coal Mines
+Administration (NARA 540360, public domain), cropped.

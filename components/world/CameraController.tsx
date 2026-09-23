@@ -4,7 +4,7 @@ import { useFrame, useThree } from "@react-three/fiber";
 import { type RefObject, useEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
 import type { OriginalCamera } from "@/lib/demo/memory";
-import { type CardRect, clamp01, entryFrame, handoffOffset } from "@/lib/world/entry";
+import { type CardRect, clamp01, ENTRY, entryFrame, handoffOffset } from "@/lib/world/entry";
 import type { WorldFx } from "./fx";
 
 export type WorldMode = "ready" | "entering" | "exploring" | "capture";
@@ -54,7 +54,7 @@ export function CameraController({ mode, original, card, fx, returnSignal, onEnt
   const dom = useThree((s) => s.gl.domElement);
 
   const base = useMemo(() => {
-    const q = new THREE.Quaternion().setFromEuler(new THREE.Euler(...original.rotation));
+    const q = new THREE.Quaternion().setFromEuler(new THREE.Euler(...original.rotation, "YXZ"));
     return { q, p: new THREE.Vector3(...original.position) };
   }, [original]);
 
@@ -186,6 +186,7 @@ export function CameraController({ mode, original, card, fx, returnSignal, onEnt
       fx.current.worldOpacity = 0;
       fx.current.photoOpacity = 1;
       fx.current.photoFeather = 0;
+      fx.current.photoGlued = false;
       return;
     }
 
@@ -197,6 +198,7 @@ export function CameraController({ mode, original, card, fx, returnSignal, onEnt
       fx.current.worldOpacity = f.worldOpacity;
       fx.current.photoOpacity = f.photoOpacity;
       fx.current.photoFeather = f.photoFeather;
+      fx.current.photoGlued = state.t >= ENTRY.arrive;
       if (f.done && !state.entered) {
         state.entered = true;
         state.offset.set(0, 0, -f.push).applyQuaternion(base.q);
@@ -270,6 +272,8 @@ export function CameraController({ mode, original, card, fx, returnSignal, onEnt
 
     fx.current.worldOpacity = 1;
     fx.current.photoFeather = 1;
+    // Returning to the photo lays it back at its real place in the world.
+    if (state.returning || state.memoryView) fx.current.photoGlued = false;
     const photoTarget = state.memoryView ? 1 : 0;
     fx.current.photoOpacity +=
       (photoTarget - fx.current.photoOpacity) * (1 - Math.exp(-dt * (state.memoryView ? 2 : 3)));

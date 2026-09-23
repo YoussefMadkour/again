@@ -8,6 +8,7 @@ import type { WorldFx } from "./fx";
 interface Props {
   url: string;
   quaternion: [number, number, number, number];
+  scale: number;
   fx: RefObject<WorldFx>;
   onLoaded: () => void;
   onError: (error: unknown) => void;
@@ -18,7 +19,7 @@ interface Props {
  * SplatMesh does its loading in the constructor, so the JSX `args` pattern would
  * recreate it on every re-render.
  */
-export function GaussianEnvironment({ url, quaternion, fx, onLoaded, onError }: Props) {
+export function GaussianEnvironment({ url, quaternion, scale, fx, onLoaded, onError }: Props) {
   const gl = useThree((s) => s.gl);
   const scene = useThree((s) => s.scene);
   const meshRef = useRef<SplatMesh | null>(null);
@@ -34,6 +35,7 @@ export function GaussianEnvironment({ url, quaternion, fx, onLoaded, onError }: 
 
     const mesh = new SplatMesh({ url });
     mesh.quaternion.set(qx, qy, qz, qw);
+    mesh.scale.setScalar(scale);
     mesh.opacity = 0;
     scene.add(mesh);
     meshRef.current = mesh;
@@ -54,7 +56,7 @@ export function GaussianEnvironment({ url, quaternion, fx, onLoaded, onError }: 
       mesh.dispose();
       spark.dispose?.();
     };
-  }, [gl, scene, url, qx, qy, qz, qw]);
+  }, [gl, scene, url, qx, qy, qz, qw, scale]);
 
   useFrame(() => {
     const mesh = meshRef.current;

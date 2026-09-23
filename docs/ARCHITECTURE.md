@@ -1,4 +1,4 @@
-# Architecture (Milestone 1)
+# Architecture
 
 One page, one full-viewport canvas, one DOM overlay. UX is driven by `ExperienceState`
 (`lib/experience/state.ts`), never by routes.
@@ -13,6 +13,19 @@ app/page.tsx
         └── CameraController      entry choreography + free camera + return-to-photo
 ```
 
+## Making a memory (Milestone 2)
+
+```
+drop photo ─► preparePhoto (EXIF rotate, ≤2048px, re-encode)      lib/experience/memory-client.ts
+          ─► POST /api/world ─► WorldProvider.create             app/api/world/route.ts
+          ─► poll GET /api/world/:job every 4s                   app/api/world/[jobId]/route.ts
+          ─► buildMemory: calibrate camera from pano             lib/world/calibrate*.ts
+          ─► ready: MemoryWorld loads the splat, then STEP INSIDE
+```
+
+There's no database. The job id and the photo live in the browser (sessionStorage, so a reload
+resumes). The server is stateless and proxies to the provider with the secret key.
+
 ## The entry transition
 
 The photograph exists twice: as an `<img>` in the DOM and as a plane in the 3D scene placed
@@ -25,9 +38,10 @@ The photograph exists twice: as an `<img>` in the DOM and as a plane in the 3D s
    pixel-identical, nothing visibly changes.
 3. **Approach** (0 → 2.4s). The camera eases to the original viewpoint. From 1.45s the splat fades
    in and the plane's edges feather, so the room opens up around the print.
-4. **Cross** (2.5 → 3.2s). The camera keeps drifting forward while the photo dissolves. Because the
-   demo photo is a render of the world from that viewpoint, it resolves into the world rather than
-   cutting to it; the aged print becomes the vivid place.
+4. **Cross** (2.5 → 3.2s). From the moment the camera arrives, the photo rides with the camera
+   (`photoGlued`), so it dissolves in place while the world starts moving behind it. Leaving it at
+   its real depth caused a heavy double exposure on real worlds, where the walls sit ~3× further
+   away than the photo plane.
 5. **Explore** (3.8s). Control is handed over.
 
 All per-frame values (world opacity, photo opacity, feather) live in a mutable `WorldFx` ref,

@@ -2,7 +2,7 @@ import type { Vector3Tuple } from "three";
 
 export interface OriginalCamera {
   position: Vector3Tuple;
-  /** Euler XYZ, radians. */
+  /** [pitch, yaw, roll] in radians, applied in three.js Euler order "YXZ". */
   rotation: Vector3Tuple;
   /** Vertical field of view, degrees. */
   fov: number;
@@ -16,8 +16,13 @@ export interface Memory {
   splatUrl: string;
   /** Orientation fix applied to the splat (Marble exports are Y-down). */
   splatQuaternion: [number, number, number, number];
+  /** Uniform scale about the origin (the photo's viewpoint), e.g. Marble's metric scale. */
+  splatScale: number;
   originalCamera: OriginalCamera;
 }
+
+/** Marble worlds are OpenCV-convention; its viewer rotates 180° about X. */
+export const MARBLE_SPLAT_QUATERNION: Memory["splatQuaternion"] = [1, 0, 0, 0];
 
 /**
  * The demo memory. The photograph is a render of the splat from `originalCamera`
@@ -30,6 +35,7 @@ export const DEMO_MEMORY: Memory = {
   photoAspect: 4 / 3,
   splatUrl: "/demo/painted-bedroom.spz",
   splatQuaternion: [1, 0, 0, 0],
+  splatScale: 1,
   originalCamera: {
     position: [0, 0, 0],
     rotation: [0, 0, 0],

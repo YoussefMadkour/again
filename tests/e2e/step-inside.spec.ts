@@ -1,11 +1,12 @@
 import { expect, test } from "@playwright/test";
 
-test("photo → step inside → world → look and move → return", async ({ page }) => {
+test("demo memory → step inside → world → look and move → return", async ({ page }) => {
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(String(e)));
 
   await page.goto("/");
   await expect(page.getByRole("heading", { name: "AGAIN." })).toBeVisible();
+  await page.getByRole("button", { name: /enter a memory/i }).click();
   await expect(page.getByAltText(/photograph this memory/i)).toBeVisible();
 
   const step = page.getByRole("button", { name: /step inside/i });

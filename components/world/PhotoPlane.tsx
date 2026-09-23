@@ -2,7 +2,7 @@
 
 import { useTexture } from "@react-three/drei";
 import { useFrame } from "@react-three/fiber";
-import { type RefObject, useMemo } from "react";
+import { type RefObject, useMemo, useRef } from "react";
 import * as THREE from "three";
 import type { OriginalCamera } from "@/lib/demo/memory";
 import { PHOTO_DISTANCE, photoPlaneHeight } from "@/lib/world/entry";
@@ -48,7 +48,7 @@ export function PhotoPlane({ url, aspect, camera, fx }: Props) {
   texture.colorSpace = THREE.SRGBColorSpace;
 
   const { position, quaternion, width, height } = useMemo(() => {
-    const q = new THREE.Quaternion().setFromEuler(new THREE.Euler(...camera.rotation));
+    const q = new THREE.Quaternion().setFromEuler(new THREE.Euler(...camera.rotation, "YXZ"));
     const p = new THREE.Vector3(0, 0, -PHOTO_DISTANCE)
       .applyQuaternion(q)
       .add(new THREE.Vector3(...camera.position));
@@ -73,13 +73,26 @@ export function PhotoPlane({ url, aspect, camera, fx }: Props) {
     [texture],
   );
 
-  useFrame(() => {
+  const mesh = useRef<THREE.Mesh>(null);
+
+  useFrame(({ camera: view }) => {
+    const m = mesh.current;
+    if (m) {
+      if (fx.current.photoGlued) {
+        m.position.set(0, 0, -PHOTO_DISTANCE).applyQuaternion(view.quaternion).add(view.position);
+        m.quaternion.copy(view.quaternion);
+      } else {
+        m.position.copy(position);
+        m.quaternion.copy(quaternion);
+      }
+    }
     material.uniforms.opacity.value = fx.current.photoOpacity;
     material.uniforms.feather.value = fx.current.photoFeather * MAX_FEATHER;
   });
 
   return (
     <mesh
+      ref={mesh}
       position={position}
       quaternion={quaternion}
       renderOrder={10}

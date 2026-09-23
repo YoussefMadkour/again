@@ -44,6 +44,7 @@ export default function MemoryWorld({
       <GaussianEnvironment
         url={memory.splatUrl}
         quaternion={memory.splatQuaternion}
+        scale={memory.splatScale}
         fx={fx}
         onLoaded={onLoaded}
         onError={onError}

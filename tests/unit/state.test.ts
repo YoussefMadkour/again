@@ -5,7 +5,6 @@ describe("experience state machine", () => {
   it("walks the full upload flow", () => {
     let s = nextState("idle", { type: "UPLOAD" });
     s = nextState(s, { type: "UPLOADED" });
-    s = nextState(s, { type: "ANALYZED" });
     s = nextState(s, { type: "GENERATED" });
     expect(s).toBe("ready");
     s = nextState(s, { type: "STEP_INSIDE" });
@@ -23,7 +22,7 @@ describe("experience state machine", () => {
   });
 
   it("any pipeline failure lands in error, which can reset", () => {
-    expect(nextState("analyzing", { type: "FAIL" })).toBe("error");
+    expect(nextState("generating", { type: "FAIL" })).toBe("error");
     expect(nextState("error", { type: "RESET" })).toBe("idle");
   });
 });

@@ -27,9 +27,10 @@ const transitions: Record<
   Partial<Record<ExperienceEvent["type"], ExperienceState>>
 > = {
   idle: { UPLOAD: "uploading", DEMO: "ready" },
-  uploading: { UPLOADED: "analyzing", FAIL: "error" },
+  // No scene analysis yet (Milestone 3), so an upload goes straight to generating.
+  uploading: { UPLOADED: "generating", FAIL: "error", RESET: "idle" },
   analyzing: { ANALYZED: "generating", FAIL: "error" },
-  generating: { GENERATED: "ready", FAIL: "error" },
+  generating: { GENERATED: "ready", FAIL: "error", RESET: "idle" },
   ready: { STEP_INSIDE: "entering", RESET: "idle" },
   entering: { ENTERED: "exploring", FAIL: "error" },
   exploring: { RESET: "idle" },
