@@ -19,6 +19,7 @@ import {
   FalSegmentProvider,
   FalStorage,
   FalVisionProvider,
+  findFrames,
   isMeshModel,
 } from "./providers/real/fal";
 import { GeminiVisionProvider } from "./providers/real/gemini";
@@ -58,6 +59,7 @@ export function getExtrasDeps(): ExtrasDeps {
     judge: process.env.TYPESAFE_API_KEY ? new JevJudge(process.env.TYPESAFE_API_KEY) : null,
     crop: cropToBox,
     optimizeMesh: optimizeRemoteGlb,
+    findFrames: fal ? (photoUrl) => findFrames(fal, photoUrl) : undefined,
     cutout: fal
       ? (photoUrl, layer) =>
           layer.kind === "person"

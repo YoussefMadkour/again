@@ -214,6 +214,27 @@ export async function removeBackground(fal: FalClient, imageUrl: string): Promis
   return out.image.url;
 }
 
+/** Every framed photograph or picture SAM 3 can find in the photo. */
+export async function findFrames(fal: FalClient, photoUrl: string) {
+  const out = await fal.run<{ metadata?: { score: number; box: number[] }[] | null }>(
+    "fal-ai/sam-3/image",
+    {
+      image_url: photoUrl,
+      prompt: "framed photograph",
+      apply_mask: false,
+      include_boxes: true,
+      include_scores: true,
+      return_multiple_masks: true,
+      max_masks: 12,
+      output_format: "png",
+    },
+  );
+  return (out.metadata ?? []).map(({ score, box: [cx, cy, w, h] }) => ({
+    score,
+    box: [cx - w / 2, cy - h / 2, cx + w / 2, cy + h / 2] as BoundingBox,
+  }));
+}
+
 /** SAM 3 below this confidence may have picked the wrong thing: use generic removal. */
 const MIN_CUTOUT_SCORE = 0.3;
 

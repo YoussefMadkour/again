@@ -10,6 +10,7 @@ import {
   FalSegmentProvider,
   FalStorage,
   FalVisionProvider,
+  findFrames,
   isMeshModel,
 } from "../lib/ai/providers/real/fal";
 import { GeminiVisionProvider } from "../lib/ai/providers/real/gemini";
@@ -54,6 +55,7 @@ const deps = {
   storage,
   crop: cropToBox,
   optimizeMesh: optimizeRemoteGlb,
+  findFrames: (photoUrl: string) => findFrames(fal, photoUrl),
   cutout: (
     photoUrl: string,
     layer: { kind: string; bbox: readonly [number, number, number, number] },
@@ -73,6 +75,7 @@ if (!existing) {
   if (process.argv.includes("--layers")) {
     existing.analysis = { state: "done", result: await deps.vision.analyze(entry.photoUrl) };
     existing.layers = null;
+    existing.framesSearched = false;
   }
   for (const o of existing.objects ?? []) {
     if (o.state === "failed")

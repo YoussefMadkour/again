@@ -74,6 +74,8 @@ export interface Extras {
   layers?: LayerState[] | null;
   /** Jev's per-object calls, when it made them (kept for transparency and debugging). */
   decisions?: ObjectDecision[];
+  /** Whether the photo has been searched for framed pictures the vision model missed. */
+  framesSearched?: boolean;
   createdAt: string;
 }
 
@@ -100,6 +102,8 @@ export interface ExtrasDeps {
   judge?: Judge | null;
   /** Crops the photo to a box (with padding) and returns image bytes. */
   crop: (photoUrl: string, bbox: BoundingBox) => Promise<Uint8Array<ArrayBuffer>>;
+  /** Finds framed photographs/pictures in the photo (boxes with confidence). */
+  findFrames?: (photoUrl: string) => Promise<{ box: BoundingBox; score: number }[]>;
   /** Cuts a photo layer out of the photograph as a transparent PNG. */
   cutout?: (
     photoUrl: string,
@@ -180,6 +184,14 @@ export async function advanceExtras(jobId: string, deps: ExtrasDeps): Promise<Ex
     }
     if (x.analysis.state !== "pending" && x.layers == null) {
       x.layers = x.analysis.result ? planLayers(x.analysis.result, x.decisions) : [];
+      await save();
+    }
+
+    // 2b. Framed pictures the vision model didn't list (small ones on the walls, mostly).
+    if (x.layers && !x.framesSearched && x.photoUrl && deps.findFrames) {
+      const found = await deps.findFrames(x.photoUrl).catch(() => []);
+      x.layers.push(...extraFrames(found, x.layers, x.objects ?? []));
+      x.framesSearched = true;
       await save();
     }
 
@@ -284,6 +296,49 @@ export function planLayers(analysis: MemoryAnalysis, decisions?: ObjectDecision[
       }),
     );
   return [...people, ...flat];
+}
+
+const MIN_FRAME_SCORE = 0.6;
+const MIN_FRAME_AREA = 0.0006;
+const MAX_FRAME_AREA = 0.1;
+
+/** New flat layers for frames that nothing else covers yet, within the layer budget. */
+export function extraFrames(
+  found: { box: BoundingBox; score: number }[],
+  layers: LayerState[],
+  objects: HeroObjectState[],
+): LayerState[] {
+  // Not people's boxes: a portrait on the wall behind someone is still its own layer.
+  const taken = [
+    ...layers.filter((l) => l.kind === "flat").map((l) => l.bbox),
+    ...objects.map((o) => o.bbox),
+  ];
+  let room = LAYER_BUDGET.flat - layers.filter((l) => l.kind === "flat").length;
+  const added: LayerState[] = [];
+  for (const { box, score } of [...found].sort((a, b) => b.score - a.score)) {
+    if (room <= 0) break;
+    const area = (box[2] - box[0]) * (box[3] - box[1]);
+    if (score < MIN_FRAME_SCORE || area < MIN_FRAME_AREA || area > MAX_FRAME_AREA) continue;
+    if (taken.some((t) => overlap(t, box) > 0.3)) continue;
+    taken.push(box);
+    added.push({
+      id: `layer-frame-${added.length + 1}`,
+      kind: "flat",
+      label: "framed photograph",
+      bbox: box,
+      state: "pending",
+    });
+    room--;
+  }
+  return added;
+}
+
+/** Share of the smaller box covered by the other (catches a frame inside a person's box). */
+function overlap(a: BoundingBox, b: BoundingBox): number {
+  const ix = Math.max(0, Math.min(a[2], b[2]) - Math.max(a[0], b[0]));
+  const iy = Math.max(0, Math.min(a[3], b[3]) - Math.max(a[1], b[1]));
+  const smaller = Math.min((a[2] - a[0]) * (a[3] - a[1]), (b[2] - b[0]) * (b[3] - b[1]));
+  return smaller > 0 ? (ix * iy) / smaller : 0;
 }
 
 async function advanceLayer(l: LayerState, photoUrl: string | null, deps: ExtrasDeps) {

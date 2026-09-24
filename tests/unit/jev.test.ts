@@ -146,3 +146,35 @@ describe("gallery hold", () => {
     expect(await galleryCards(store)).toHaveLength(1);
   });
 });
+
+describe("extra frames", () => {
+  it("adds frames nothing covers yet, including ones behind a person, within budget", async () => {
+    const { extraFrames } = await import("@/lib/pipeline/extras");
+    const layers = [
+      {
+        id: "layer-person",
+        kind: "person" as const,
+        label: "person",
+        bbox: [0.2, 0.3, 0.4, 0.8] as const,
+        state: "done" as const,
+      },
+      {
+        id: "layer-oval",
+        kind: "flat" as const,
+        label: "oval",
+        bbox: [0.7, 0.1, 0.8, 0.3] as const,
+        state: "done" as const,
+      },
+    ];
+    const found = [
+      { box: [0.71, 0.12, 0.8, 0.31] as const, score: 0.97 }, // the oval again
+      { box: [0.24, 0.37, 0.27, 0.43] as const, score: 0.84 }, // behind the person: keep
+      { box: [0.9, 0.1, 0.95, 0.2] as const, score: 0.95 },
+      { box: [0.5, 0.5, 0.52, 0.52] as const, score: 0.4 }, // unsure
+    ];
+    expect(extraFrames(found, layers, []).map((l) => l.bbox)).toEqual([
+      [0.9, 0.1, 0.95, 0.2],
+      [0.24, 0.37, 0.27, 0.43],
+    ]);
+  });
+});
