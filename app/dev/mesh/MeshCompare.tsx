@@ -2,7 +2,7 @@
 
 import { Bounds, Center, OrbitControls, useGLTF } from "@react-three/drei";
 import { Canvas, useThree } from "@react-three/fiber";
-import { Suspense, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import type * as THREE from "three";
 import { fixGeneratedMaterial, roomEnvironment } from "@/lib/world/materials";
 
@@ -35,13 +35,19 @@ function Model({ url, angle }: { url: string; angle: number }) {
 }
 
 export function MeshCompare() {
-  const [{ files, angle }] = useState(() => {
-    const q = new URLSearchParams(typeof window === "undefined" ? "" : window.location.search);
-    return {
+  // Read the URL after mounting: on the server there is none, and reading it during render
+  // makes the server's HTML (no models) and the browser's (models) disagree.
+  const [{ files, angle }, setParams] = useState<{ files: string[]; angle: number }>({
+    files: [],
+    angle: 0,
+  });
+  useEffect(() => {
+    const q = new URLSearchParams(window.location.search);
+    setParams({
       files: (q.get("files") ?? "").split(",").filter(Boolean),
       angle: Number(q.get("angle") ?? 0),
-    };
-  });
+    });
+  }, []);
   return (
     <div style={{ display: "flex", gap: 8, background: "#1a1a1a", height: "100vh" }}>
       {files.map((f) => (
