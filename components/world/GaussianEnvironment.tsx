@@ -120,8 +120,6 @@ export function GaussianEnvironment({
   // biome-ignore lint/correctness/useExhaustiveDependencies: holes are keyed by id
   useEffect(() => {
     const meshes = [base.current, upgrade.current?.mesh].filter(Boolean) as SplatMesh[];
-    if (process.env.NODE_ENV === "development")
-      console.info("[again] holes", holes.map((h) => h.id).join(" "));
     const edits = meshes.map((mesh) => {
       const edit = eraseEdit(mesh, holes);
       mesh.add(edit);

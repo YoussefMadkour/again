@@ -6,6 +6,7 @@ import { type RefObject, useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import type { BoundingBox } from "@/lib/analysis/schema";
 import type { OriginalCamera } from "@/lib/demo/memory";
+import { fitFigureCapsule } from "@/lib/world/figure";
 import { type LayerQuad, layerQuad } from "@/lib/world/placement";
 import type { WorldFx } from "./fx";
 import type { Hole } from "./GaussianEnvironment";
@@ -71,7 +72,11 @@ export function PhotoLayers({
     canvas.height = Math.round(MASK_WIDTH / photoAspect);
     const texture = new THREE.CanvasTexture(canvas);
     texture.flipY = true;
-    return { canvas, texture };
+    // The same, undilated: which splats are the person's core.
+    const silhouette = document.createElement("canvas");
+    silhouette.width = canvas.width;
+    silhouette.height = canvas.height;
+    return { canvas, texture, silhouette };
   }, [photoAspect]);
   const personStrength = useRef(new Map<string, number>());
 
@@ -91,25 +96,44 @@ export function PhotoLayers({
 
   const addPerson = (image: CanvasImageSource, [x0, y0, x1, y1]: BoundingBox, depth: number) => {
     const ctx = mask.canvas.getContext("2d");
-    if (!ctx) return;
+    const core = mask.silhouette.getContext("2d", { willReadFrequently: true });
+    if (!ctx || !core) return;
     const { width, height } = mask.canvas;
-    // Grown a few pixels: the splat's copy of the person sits a little off from the photo's,
-    // and the part outside a tight mask shows as a ghost.
-    const grow = Math.round(width * 0.018);
-    for (let dy = -grow; dy <= grow; dy += Math.max(1, Math.round(grow / 2))) {
-      for (let dx = -grow; dx <= grow; dx += Math.max(1, Math.round(grow / 2))) {
-        ctx.drawImage(
-          image,
-          x0 * width + dx,
-          y0 * height + dy,
-          (x1 - x0) * width,
-          (y1 - y0) * height,
-        );
-      }
+    const at = (dx: number, dy: number, target: CanvasRenderingContext2D) =>
+      target.drawImage(
+        image,
+        x0 * width + dx,
+        y0 * height + dy,
+        (x1 - x0) * width,
+        (y1 - y0) * height,
+      );
+    at(0, 0, core);
+    // Grown generously: the capsule below keeps the hiding off the wall behind the person.
+    const grow = Math.round(width * 0.045);
+    const step = Math.max(1, Math.round(grow / 3));
+    for (let dy = -grow; dy <= grow; dy += step) {
+      for (let dx = -grow; dx <= grow; dx += step) at(dx, dy, ctx);
     }
     mask.texture.needsUpdate = true;
     provenance.peopleDepth.value = depth;
+
+    // Find the world model's own figure of this person, in 3D.
+    const pixels = core.getImageData(0, 0, width, height).data;
+    const capsule = fitFigureCapsule(
+      splat,
+      camera,
+      photoAspect,
+      (u, v) =>
+        pixels[(Math.floor(v * (height - 1)) * width + Math.floor(u * (width - 1))) * 4 + 3] / 255,
+      depth,
+    );
+    if (capsule) {
+      provenance.peopleCapsule.value.set(capsule.x, capsule.z, capsule.radius, 1);
+      provenance.peopleHeight.value.set(capsule.yMin, capsule.yMax);
+      if (process.env.NODE_ENV === "development") console.info("[again] figure capsule", capsule);
+    }
   };
+
   return (
     <>
       {layers.map((layer) => (

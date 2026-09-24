@@ -268,6 +268,17 @@ export function Experience({ gallery, access }: Props) {
     router.refresh();
   }, [photo, router]);
 
+  // Photo layers (people, portraits) must be there the moment you step inside, so fetch them
+  // while the photograph is still on screen rather than when the world asks.
+  useEffect(() => {
+    for (const layer of extras?.layers ?? []) {
+      if (layer.state !== "done" || !layer.url) continue;
+      const image = new Image();
+      image.crossOrigin = "anonymous";
+      image.src = layer.url;
+    }
+  }, [extras]);
+
   // --- Entering. ---
   const inWorld = state === "entering" || state === "exploring";
   const canEnter = state === "ready" && worldLoaded;

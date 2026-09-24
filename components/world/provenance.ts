@@ -34,6 +34,12 @@ export interface ProvenanceUniforms {
   peopleStrength: ReturnType<typeof dyno.dynoFloat>;
   /** The people's depth in the original camera (metres along its view). */
   peopleDepth: ReturnType<typeof dyno.dynoFloat>;
+  /**
+   * The world model's figure of the person, as an upright capsule (x, z, radius, active) and
+   * its height range (yMin, yMax). When active, hiding is confined to it (see figure.ts).
+   */
+  peopleCapsule: ReturnType<typeof dyno.dynoVec4<THREE.Vector4>>;
+  peopleHeight: ReturnType<typeof dyno.dynoVec2<THREE.Vector2>>;
 }
 
 const EMPTY_MASK = (() => {
@@ -52,6 +58,8 @@ export function createProvenanceUniforms(): ProvenanceUniforms {
     peopleMask: dyno.dynoSampler2D(EMPTY_MASK as THREE.Texture),
     peopleStrength: dyno.dynoFloat(0),
     peopleDepth: dyno.dynoFloat(0),
+    peopleCapsule: dyno.dynoVec4(new THREE.Vector4(0, 0, 0, 0)),
+    peopleHeight: dyno.dynoVec2(new THREE.Vector2(0, 0)),
   };
 }
 
@@ -75,6 +83,8 @@ export function provenanceModifier(u: ProvenanceUniforms): GsplatModifier {
         peopleMask: "sampler2D",
         peopleStrength: "float",
         peopleDepth: "float",
+        peopleCapsule: "vec4",
+        peopleHeight: "vec2",
       },
       outTypes: { gsplat: dyno.Gsplat },
       statements: ({ inputs, outputs }) =>
@@ -94,9 +104,17 @@ export function provenanceModifier(u: ProvenanceUniforms): GsplatModifier {
 
           // Hide the splat's copy of a person where their photo layer stands (see peopleMask).
           if (${inputs.peopleStrength} > 0.001 && observed > 0.0) {
+            // Soft-edged on purpose: hiding hard exposes a dark halo of the sparse splats behind
+            // the model's figure, which reads worse than a faint trace of its outline.
             float m = texture(${inputs.peopleMask}, ndc * 0.5 + 0.5).a;
-            float near = 1.0 - smoothstep(0.6, 1.2, abs(-c.z - ${inputs.peopleDepth}));
-            rgba.a *= 1.0 - ${inputs.peopleStrength} * m * near * ahead;
+            vec4 cap = ${inputs.peopleCapsule};
+            vec3 p = ${inputs.gsplat}.center;
+            // Inside the figure's capsule (3D), or, before it's known, near the person's depth.
+            float within = cap.w > 0.5
+              ? (1.0 - smoothstep(cap.z * 0.85, cap.z, length(p.xz - cap.xy)))
+                * step(${inputs.peopleHeight}.x, p.y) * step(p.y, ${inputs.peopleHeight}.y)
+              : 1.0 - smoothstep(0.6, 1.2, abs(-c.z - ${inputs.peopleDepth}));
+            rgba.a *= 1.0 - ${inputs.peopleStrength} * m * within * ahead;
           }
 
           float lum = dot(rgba.rgb, vec3(0.299, 0.587, 0.114));
@@ -129,6 +147,8 @@ export function provenanceModifier(u: ProvenanceUniforms): GsplatModifier {
         peopleMask: u.peopleMask,
         peopleStrength: u.peopleStrength,
         peopleDepth: u.peopleDepth,
+        peopleCapsule: u.peopleCapsule,
+        peopleHeight: u.peopleHeight,
       }).gsplat,
     };
   });
