@@ -187,3 +187,51 @@ describe("gemini boxes", () => {
     expect(out.objects[0].box_2d).toBeUndefined();
   });
 });
+
+describe("photo layers", () => {
+  it("plans people with boxes and flat things marked preserve", async () => {
+    const { planLayers } = await import("@/lib/pipeline/extras");
+    const analysis = parseAnalysis(
+      JSON.stringify({
+        objects: [
+          {
+            id: "portrait",
+            label: "oval portrait",
+            bbox: [0.2, 0.1, 0.3, 0.3],
+            recommendedRepresentation: "preserve",
+          },
+          {
+            id: "lamp",
+            label: "lamp",
+            bbox: [0.4, 0.4, 0.6, 0.8],
+            recommendedRepresentation: "mesh",
+          },
+          {
+            id: "guess",
+            label: "photo",
+            bbox: [0.7, 0.1, 0.8, 0.2],
+            recommendedRepresentation: "preserve",
+            provenance: "inferred",
+          },
+        ],
+        people: [
+          { id: "p1", description: "figure", bbox: [0.2, 0.3, 0.4, 0.8], confidence: 0.9 },
+          { id: "p2", description: "blurry figure", bbox: [0.8, 0.3, 0.9, 0.8], confidence: 0.3 },
+          { id: "p3", description: "no box", confidence: 0.9 },
+        ],
+      }),
+    );
+    expect(planLayers(analysis).map((l) => [l.id, l.kind])).toEqual([
+      ["layer-p1", "person"],
+      ["layer-portrait", "flat"],
+    ]);
+  });
+
+  it("Gemini boxes for people are converted too", async () => {
+    const { convertBoxes } = await import("@/lib/ai/providers/real/gemini");
+    const out = JSON.parse(
+      convertBoxes(JSON.stringify({ people: [{ id: "p", box_2d: [100, 200, 900, 400] }] })),
+    );
+    expect(out.people[0].bbox).toEqual([0.2, 0.1, 0.4, 0.9]);
+  });
+});

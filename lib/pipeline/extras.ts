@@ -47,6 +47,20 @@ export interface SoundState {
   url?: string;
 }
 
+/** The photo's own pixels, for what the world model can't rebuild (see layers.ts). */
+export interface LayerState {
+  id: string;
+  kind: "person" | "flat";
+  label: string;
+  bbox: BoundingBox;
+  state: StepState;
+  error?: string;
+  /** Transparent PNG. */
+  url?: string;
+  /** The region of the photo the PNG covers (the box plus padding). Draw it there. */
+  imageBox?: BoundingBox;
+}
+
 export interface Extras {
   photoUrl: string | null;
   share: boolean;
@@ -54,6 +68,8 @@ export interface Extras {
   /** Null until the analysis has been read. */
   objects: HeroObjectState[] | null;
   sounds: SoundState[] | null;
+  /** Undefined on memories made before layers existed. */
+  layers?: LayerState[] | null;
   createdAt: string;
 }
 
@@ -66,6 +82,7 @@ export interface PublicExtras {
   >;
   objects: Pick<HeroObjectState, "id" | "label" | "description" | "bbox" | "glbUrl" | "state">[];
   sounds: Pick<SoundState, "id" | "kind" | "description" | "objectId" | "bbox" | "url" | "state">[];
+  layers?: Pick<LayerState, "id" | "kind" | "label" | "bbox" | "imageBox" | "url" | "state">[];
 }
 
 export interface ExtrasDeps {
@@ -77,9 +94,16 @@ export interface ExtrasDeps {
   storage: FileStorage | null;
   /** Crops the photo to a box (with padding) and returns image bytes. */
   crop: (photoUrl: string, bbox: BoundingBox) => Promise<Uint8Array<ArrayBuffer>>;
+  /** Cuts a photo layer out of the photograph as a transparent PNG. */
+  cutout?: (
+    photoUrl: string,
+    layer: LayerState,
+  ) => Promise<{ bytes: Uint8Array<ArrayBuffer>; box: BoundingBox }>;
   /** Compresses a finished mesh for the browser; null when it wouldn't help. */
   optimizeMesh?: (glbUrl: string) => Promise<Uint8Array<ArrayBuffer> | null>;
 }
+
+export const LAYER_BUDGET = { people: 3, flat: 8 };
 
 export const SOUND_BUDGET = {
   ambientSeconds: 15,
@@ -103,6 +127,7 @@ export async function startExtras(
     analysis: { state: opts.photoUrl ? "pending" : "skipped" },
     objects: null,
     sounds: null,
+    layers: null,
     createdAt: new Date().toISOString(),
   };
   await store.set(key(jobId), extras, TTL);
@@ -141,6 +166,11 @@ export async function advanceExtras(jobId: string, deps: ExtrasDeps): Promise<Ex
       const analysis = x.analysis.result;
       x.objects = analysis ? planObjects(analysis) : [];
       x.sounds = analysis ? planSounds(analysis) : [];
+      x.layers = analysis ? planLayers(analysis) : [];
+      await save();
+    }
+    if (x.analysis.state !== "pending" && x.layers == null) {
+      x.layers = x.analysis.result ? planLayers(x.analysis.result) : [];
       await save();
     }
 
@@ -148,6 +178,7 @@ export async function advanceExtras(jobId: string, deps: ExtrasDeps): Promise<Ex
     await Promise.all([
       ...(x.sounds ?? []).map((s) => advanceSound(s, deps)),
       ...(x.objects ?? []).map((o) => advanceObject(o, x.photoUrl, deps)),
+      ...(x.layers ?? []).map((l) => advanceLayer(l, x.photoUrl, deps)),
     ]);
     await save();
     return x;
@@ -193,6 +224,54 @@ export function planSounds(analysis: MemoryAnalysis): SoundState[] {
       }),
     );
   return [...ambient, ...positional];
+}
+
+/** People (confidently seen, with a box) and flat things whose exact pixels matter. */
+export function planLayers(analysis: MemoryAnalysis): LayerState[] {
+  const people = analysis.people
+    .filter((p) => p.bbox && p.confidence >= 0.5)
+    .slice(0, LAYER_BUDGET.people)
+    .map(
+      (p): LayerState => ({
+        id: `layer-${p.id}`,
+        kind: "person",
+        label: "person",
+        bbox: p.bbox as BoundingBox,
+        state: "pending",
+      }),
+    );
+  const flat = analysis.objects
+    .filter(
+      (o) => o.bbox && o.provenance === "observed" && o.recommendedRepresentation === "preserve",
+    )
+    .slice(0, LAYER_BUDGET.flat)
+    .map(
+      (o): LayerState => ({
+        id: `layer-${o.id}`,
+        kind: "flat",
+        label: o.label,
+        bbox: o.bbox as BoundingBox,
+        state: "pending",
+      }),
+    );
+  return [...people, ...flat];
+}
+
+async function advanceLayer(l: LayerState, photoUrl: string | null, deps: ExtrasDeps) {
+  if (l.state !== "pending") return;
+  if (!deps.cutout || !deps.storage || !photoUrl) {
+    l.state = "skipped";
+    return;
+  }
+  try {
+    const cut = await deps.cutout(photoUrl, l);
+    l.url = await deps.storage.upload(cut.bytes, "image/png", `${l.id}-${randomId(6)}.png`);
+    l.imageBox = cut.box;
+    l.state = "done";
+  } catch (error) {
+    l.state = "failed";
+    l.error = message(error);
+  }
 }
 
 async function advanceSound(s: SoundState, deps: ExtrasDeps) {
@@ -276,7 +355,8 @@ export function toPublicExtras(x: Extras): PublicExtras {
       settled(x.analysis.state) &&
       x.objects !== null &&
       x.objects.every((o) => settled(o.state)) &&
-      (x.sounds ?? []).every((s) => settled(s.state)),
+      (x.sounds ?? []).every((s) => settled(s.state)) &&
+      (x.layers ?? []).every((l) => settled(l.state)),
     scene: a && {
       sceneType: a.sceneType,
       estimatedEra: a.estimatedEra,
@@ -290,6 +370,15 @@ export function toPublicExtras(x: Extras): PublicExtras {
       description,
       bbox,
       glbUrl,
+      state,
+    })),
+    layers: (x.layers ?? []).map(({ id, kind, label, bbox, imageBox, url, state }) => ({
+      id,
+      kind,
+      label,
+      bbox,
+      imageBox,
+      url,
       state,
     })),
     sounds: (x.sounds ?? []).map(({ id, kind, description, objectId, bbox, url, state }) => ({

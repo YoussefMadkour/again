@@ -35,6 +35,8 @@ export type MemoryObject = z.infer<typeof MemoryObject>;
 export const PersonObservation = z.object({
   id: z.string(),
   description: z.string(),
+  /** Where the person is in the photo, so their real pixels can be shown near the viewpoint. */
+  bbox: BoundingBox.optional().catch(undefined),
   visibility: z.enum(["full", "partial"]).catch("partial"),
   confidence: unit.default(0.5),
 });

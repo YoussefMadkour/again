@@ -12,7 +12,7 @@ const API = "https://generativelanguage.googleapis.com/v1beta/models";
  */
 const GEMINI_BOXES = `
 
-Boxes: instead of "bbox", give each object a "box_2d": [ymin, xmin, ymax, xmax], integers 0-1000 relative to the image (0,0 top-left).`;
+Boxes: instead of "bbox", give each object and each person a "box_2d": [ymin, xmin, ymax, xmax], integers 0-1000 relative to the image (0,0 top-left).`;
 
 export class GeminiVisionProvider implements VisionProvider {
   constructor(
@@ -56,8 +56,11 @@ export function convertBoxes(text: string): string {
   const start = text.indexOf("{");
   const end = text.lastIndexOf("}");
   if (start < 0 || end <= start) return text;
-  const raw = JSON.parse(text.slice(start, end + 1)) as { objects?: Record<string, unknown>[] };
-  for (const o of raw.objects ?? []) {
+  const raw = JSON.parse(text.slice(start, end + 1)) as {
+    objects?: Record<string, unknown>[];
+    people?: Record<string, unknown>[];
+  };
+  for (const o of [...(raw.objects ?? []), ...(raw.people ?? [])]) {
     const box = o.box_2d;
     if (Array.isArray(box) && box.length === 4 && o.bbox === undefined) {
       const [ymin, xmin, ymax, xmax] = box.map(Number);

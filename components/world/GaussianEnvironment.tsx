@@ -38,6 +38,8 @@ export interface Hole {
   center: THREE.Vector3;
   /** Half extents. */
   size: THREE.Vector3;
+  /** World orientation of the ellipsoid's axes (default: axis-aligned). */
+  quaternion?: THREE.Quaternion;
 }
 
 const UPGRADE_FADE_S = 1.2;
@@ -118,6 +120,8 @@ export function GaussianEnvironment({
   // biome-ignore lint/correctness/useExhaustiveDependencies: holes are keyed by id
   useEffect(() => {
     const meshes = [base.current, upgrade.current?.mesh].filter(Boolean) as SplatMesh[];
+    if (process.env.NODE_ENV === "development")
+      console.info("[again] holes", holes.map((h) => h.id).join(" "));
     const edits = meshes.map((mesh) => {
       const edit = eraseEdit(mesh, holes);
       mesh.add(edit);
@@ -129,7 +133,7 @@ export function GaussianEnvironment({
   }, [holeKey, upgradeReady]);
 
   // Spark caches each splat's modified values: nudge it when the provenance uniforms move.
-  const lastProvenance = useRef({ dream: -1, reveal: -1 });
+  const lastProvenance = useRef({ dream: -1, reveal: -1, people: -1 });
 
   useFrame((_, dt) => {
     const world = fx.current.worldOpacity;
@@ -137,9 +141,15 @@ export function GaussianEnvironment({
       const last = lastProvenance.current;
       const dream = provenance.dream.value;
       const reveal = provenance.reveal.value;
-      if (Math.abs(dream - last.dream) > 1e-3 || Math.abs(reveal - last.reveal) > 1e-3) {
+      const people = provenance.peopleStrength.value;
+      if (
+        Math.abs(dream - last.dream) > 1e-3 ||
+        Math.abs(reveal - last.reveal) > 1e-3 ||
+        Math.abs(people - last.people) > 1e-3
+      ) {
         last.dream = dream;
         last.reveal = reveal;
+        last.people = people;
         base.current?.updateVersion();
         upgrade.current?.mesh.updateVersion();
       }
@@ -209,6 +219,10 @@ function eraseEdit(mesh: SplatMesh, holes: Hole[]) {
     const sdf = new SplatEditSdf({ type: SplatEditSdfType.ELLIPSOID, opacity: 0 });
     sdf.position.copy(mesh.worldToLocal(hole.center.clone()));
     sdf.scale.copy(hole.size).divideScalar(scale);
+    if (hole.quaternion) {
+      const meshWorld = mesh.getWorldQuaternion(new THREE.Quaternion());
+      sdf.quaternion.copy(meshWorld.invert().multiply(hole.quaternion));
+    }
     edit.addSdf(sdf);
     edit.add(sdf);
   }

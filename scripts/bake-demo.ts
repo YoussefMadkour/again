@@ -32,6 +32,10 @@ const objects = [];
 for (const o of entry.extras.objects.filter((o) => o.state === "done" && o.glbUrl)) {
   objects.push({ ...o, glbUrl: await fetchTo(o.glbUrl as string, `${o.id}.glb`) });
 }
+const layers = [];
+for (const l of entry.extras.layers ?? []) {
+  if (l.state === "done" && l.url) layers.push({ ...l, url: await fetchTo(l.url, `${l.id}.png`) });
+}
 const sounds = [];
 for (const s of entry.extras.sounds.filter((s) => s.state === "done" && s.url)) {
   sounds.push({ ...s, url: await fetchTo(s.url as string, `${s.kind}-${s.id}.mp3`) });
@@ -47,7 +51,7 @@ const baked = {
     rotation: [Number(pitch), Number(yaw), 0],
     fov: Number(fov),
   },
-  extras: { ...entry.extras, objects, sounds, done: true },
+  extras: { ...entry.extras, objects, sounds, layers, done: true },
 };
 await writeFile(`lib/demo/${name}.json`, `${JSON.stringify(baked, null, 2)}\n`);
 console.log(`wrote lib/demo/${name}.json`);

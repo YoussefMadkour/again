@@ -2,6 +2,7 @@ import "server-only";
 import { getConfig } from "@/lib/config";
 import { cropToBox } from "@/lib/pipeline/crop";
 import type { ExtrasDeps } from "@/lib/pipeline/extras";
+import { cutoutFlat, cutoutPerson } from "@/lib/pipeline/layers";
 import { optimizeRemoteGlb } from "@/lib/pipeline/optimize-glb";
 import { getStore } from "@/lib/store";
 import { LocalStorage } from "./providers/local-storage";
@@ -55,6 +56,12 @@ export function getExtrasDeps(): ExtrasDeps {
     storage,
     crop: cropToBox,
     optimizeMesh: optimizeRemoteGlb,
+    cutout: fal
+      ? (photoUrl, layer) =>
+          layer.kind === "person"
+            ? cutoutPerson(fal, photoUrl, layer.bbox)
+            : cutoutFlat(photoUrl, layer.bbox)
+      : undefined,
   };
 }
 

@@ -16,6 +16,7 @@ import { GeminiVisionProvider } from "../lib/ai/providers/real/gemini";
 import { getGalleryEntry, updateGalleryExtras } from "../lib/gallery";
 import { cropToBox } from "../lib/pipeline/crop";
 import { advanceExtras, readExtras, startExtras, toPublicExtras } from "../lib/pipeline/extras";
+import { cutoutFlat, cutoutPerson } from "../lib/pipeline/layers";
 import { optimizeRemoteGlb } from "../lib/pipeline/optimize-glb";
 import { getStore } from "../lib/store";
 
@@ -53,6 +54,13 @@ const deps = {
   storage,
   crop: cropToBox,
   optimizeMesh: optimizeRemoteGlb,
+  cutout: (
+    photoUrl: string,
+    layer: { kind: string; bbox: readonly [number, number, number, number] },
+  ) =>
+    layer.kind === "person"
+      ? cutoutPerson(fal, photoUrl, layer.bbox)
+      : cutoutFlat(photoUrl, layer.bbox),
 };
 
 // Resume if this memory already has extras (never pay twice); retry objects that failed.
@@ -61,6 +69,11 @@ if (!existing) {
   // The world's own copy of the photo is already public.
   await startExtras(store, jobId, { photoUrl: entry.photoUrl, share: true });
 } else {
+  // --layers: re-read the photo (people boxes, every portrait) and remake its photo layers.
+  if (process.argv.includes("--layers")) {
+    existing.analysis = { state: "done", result: await deps.vision.analyze(entry.photoUrl) };
+    existing.layers = null;
+  }
   for (const o of existing.objects ?? []) {
     if (o.state === "failed")
       Object.assign(o, { state: "pending", error: undefined, meshHandle: undefined });

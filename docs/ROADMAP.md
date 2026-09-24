@@ -1,27 +1,25 @@
 # Roadmap
 
-## Faces and fine detail: project the photograph back onto the world
+## ~~Faces and fine detail~~ Done: photo layers
 
-**Problem.** Marble doesn't reconstruct faces. People come out as smooth, blank masks, and
-the portraits on the walls melt. It isn't a resolution problem: the full-resolution splat
-(now used on desktop) is sharper everywhere but the face is just as blank. There's no facial
-detail in the world to recover.
+Marble doesn't reconstruct faces or the pictures on the walls, and no resolution fixes that.
+So the photograph's own pixels are laid back into the world (`lib/pipeline/layers.ts`,
+`components/world/PhotoLayers.tsx`):
 
-**Idea.** Near the original viewpoint, show the *actual photograph* on the world's surfaces
-instead of the splat's guess:
+- **Flat things** (framed photos, portraits, posters, text: the vision model marks them
+  "preserve") are cut out with a feathered margin and placed on the wall's plane, fitted from
+  raycasts. Flat in reality, so correct from any angle. The splat's blurry copy under them is
+  erased with a thin slab.
+- **People** are cut out with SAM 3 and stand at their depth (measured only through their
+  solid pixels), facing the original camera. Full strength near the photo's viewpoint, fading
+  as you walk or look away. While shown, the splat's blank-faced copy of them is hidden with
+  a photo-space mask in the provenance shader (grown a little, since the model's copy sits a
+  few cm off).
+- MEMORY ↔ DREAM: flat layers soften toward DREAM; people hand over to the model's figure
+  only near DREAM, since half-and-half reads as a ghost.
 
-1. World Labs returns a collider mesh (`assets.mesh.collider_mesh_url`, GLB) alongside the splat.
-2. Render that mesh with the photo as a **projective texture** from the calibrated original
-   camera (`originalCamera`: fov, pitch, yaw are already recovered from the panorama).
-3. Blend it over the splat by how close the viewer is to the original camera and how directly
-   a surface faces it. Full photo at the viewpoint, fading to splat as you walk away.
-   Surfaces the camera never saw get none.
-4. Tie the blend to the MEMORY ↔ DREAM control: MEMORY leans on photographic evidence, DREAM
-   shows only the model's world.
-
-This makes faces exactly right where the photograph saw them, and honest about where it
-didn't, which is the product's core distinction. Optionally, cut people out of the photo as
-depth-placed layers for a little parallax (exact from the front, flat from the side).
+What's left: a faint trace of the splat figure's outline where the model's copy strays
+furthest from the photo; people can't be seen from behind (there's nothing to show).
 
 **Not doing:** AI face restoration or upscaling. It invents a face that isn't the real person's.
 

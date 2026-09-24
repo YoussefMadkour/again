@@ -11,6 +11,7 @@ import { CameraController, type WorldMode } from "./CameraController";
 import { createWorldFx } from "./fx";
 import { GaussianEnvironment, type Hole } from "./GaussianEnvironment";
 import { HeroObjects, type PlacedObject } from "./HeroObjects";
+import { type PhotoLayerInput, PhotoLayers } from "./PhotoLayers";
 import { PhotoPlane } from "./PhotoPlane";
 import {
   createProvenanceUniforms,
@@ -62,7 +63,20 @@ export default function MemoryWorld({
   const fx = useRef(createWorldFx());
   const capture = mode === "capture";
   const [splat, setSplat] = useState<SplatMesh | null>(null);
-  const [holes, setHoles] = useState<Hole[]>([]);
+  const [objectHoles, setObjectHoles] = useState<Hole[]>([]);
+  const [layerHoles, setLayerHoles] = useState<Hole[]>([]);
+  const holes = useMemo(() => [...objectHoles, ...layerHoles], [objectHoles, layerHoles]);
+  const dreamRef = useRef(dream);
+  dreamRef.current = dream;
+  const layers = useMemo<PhotoLayerInput[]>(
+    () =>
+      (extras?.layers ?? []).flatMap((l) =>
+        l.state === "done" && l.url
+          ? [{ id: l.id, kind: l.kind, bbox: l.imageBox ?? l.bbox, url: l.url }]
+          : [],
+      ),
+    [extras],
+  );
   const provenance = useMemo(() => {
     const u = createProvenanceUniforms();
     setProvenanceCamera(u, memory.originalCamera, memory.photoAspect);
@@ -142,12 +156,24 @@ export default function MemoryWorld({
           </Suspense>
           <ambientLight intensity={0.9} />
           <directionalLight position={[1.5, 3, 2]} intensity={1.4} />
+          {splat && layers.length > 0 && (
+            <PhotoLayers
+              layers={layers}
+              splat={splat}
+              camera={memory.originalCamera}
+              photoAspect={memory.photoAspect}
+              fx={fx}
+              dream={dreamRef}
+              onHoles={setLayerHoles}
+              provenance={provenance}
+            />
+          )}
           <HeroObjects
             objects={objects}
             fx={fx}
             camera={memory.originalCamera}
             onSelect={onSelectObject}
-            onHoles={setHoles}
+            onHoles={setObjectHoles}
             seen={seenObjects}
           />
           <SpatialAudio sounds={sounds} fx={fx} muted={muted} />

@@ -13,12 +13,11 @@
     "scene": {
       "sceneType": "living room",
       "estimatedEra": "1940s",
-      "description": "A modest domestic room combining living and sleeping quarters, where a woman in an apron pauses by a sewing table to look at a framed portrait of a serviceman.",
-      "mood": "contemplative, quiet, tender",
+      "description": "A modest mid-century interior where a woman arranges framed family photographs atop a sewing machine table.",
+      "mood": "quiet, nostalgic, solemn",
       "uncertainties": [
-        "Contents of the room beyond the left doorway",
-        "Specific flooring material under the rug pattern (linoleum vs woven wool)",
-        "Exact landscape or streetscape outside the window"
+        "Exact dimensions and layout behind the camera",
+        "Floor surface material under the patterned rug/covering"
       ]
     },
     "objects": [
@@ -36,6 +35,52 @@
         "description": "Vintage wooden sewing cabinet on an ornate cast-iron treadle base",
         "bbox": [0.14752610984505904, 0.6191431681315105, 0.287994384765625, 0.8748429313538566],
         "glbUrl": "/demo/1946/sewing-machine-table.glb",
+        "state": "done"
+      }
+    ],
+    "layers": [
+      {
+        "id": "layer-person-1",
+        "kind": "person",
+        "label": "person",
+        "bbox": [0.237, 0.339, 0.381, 0.771],
+        "imageBox": [
+          0.228099173553719, 0.31299353912419237, 0.39008264462809916, 0.797559224694903
+        ],
+        "url": "/demo/1946/layer-person-1.png",
+        "state": "done"
+      },
+      {
+        "id": "layer-military-portrait",
+        "kind": "flat",
+        "label": "framed military portrait",
+        "bbox": [0.196, 0.477, 0.255, 0.552],
+        "imageBox": [
+          0.18622589531680442, 0.4644651830581479, 0.2644628099173554, 0.5642498205312275
+        ],
+        "url": "/demo/1946/layer-military-portrait.png",
+        "state": "done"
+      },
+      {
+        "id": "layer-oval-portrait-left",
+        "kind": "flat",
+        "label": "oval framed baby portrait",
+        "bbox": [0.199, 0.139, 0.292, 0.311],
+        "imageBox": [
+          0.1840220385674931, 0.11127063890882986, 0.3068870523415978, 0.3388370423546303
+        ],
+        "url": "/demo/1946/layer-oval-portrait-left.png",
+        "state": "done"
+      },
+      {
+        "id": "layer-oval-portrait-right",
+        "kind": "flat",
+        "label": "oval framed infant portrait",
+        "bbox": [0.712, 0.134, 0.814, 0.316],
+        "imageBox": [
+          0.6953168044077135, 0.1048097631012204, 0.8308539944903581, 0.34529791816223976
+        ],
+        "url": "/demo/1946/layer-oval-portrait-right.png",
         "state": "done"
       }
     ],

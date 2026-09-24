@@ -25,7 +25,22 @@ export interface ProvenanceUniforms {
   aspect: ReturnType<typeof dyno.dynoFloat>;
   dream: ReturnType<typeof dyno.dynoFloat>;
   reveal: ReturnType<typeof dyno.dynoFloat>;
+  /**
+   * Where people are in the photo (alpha, photo space). While a person's photo layer shows,
+   * the splat's own blank-faced copy of them is hidden there, so the two don't ghost.
+   */
+  peopleMask: ReturnType<typeof dyno.dynoSampler2D<THREE.Texture>>;
+  /** 0..1, how visible the person layers are right now. */
+  peopleStrength: ReturnType<typeof dyno.dynoFloat>;
+  /** The people's depth in the original camera (metres along its view). */
+  peopleDepth: ReturnType<typeof dyno.dynoFloat>;
 }
+
+const EMPTY_MASK = (() => {
+  const t = new THREE.DataTexture(new Uint8Array([0, 0, 0, 0]), 1, 1);
+  t.needsUpdate = true;
+  return t;
+})();
 
 export function createProvenanceUniforms(): ProvenanceUniforms {
   return {
@@ -34,6 +49,9 @@ export function createProvenanceUniforms(): ProvenanceUniforms {
     aspect: dyno.dynoFloat(4 / 3),
     dream: dyno.dynoFloat(1),
     reveal: dyno.dynoFloat(0),
+    peopleMask: dyno.dynoSampler2D(EMPTY_MASK as THREE.Texture),
+    peopleStrength: dyno.dynoFloat(0),
+    peopleDepth: dyno.dynoFloat(0),
   };
 }
 
@@ -54,6 +72,9 @@ export function provenanceModifier(u: ProvenanceUniforms): GsplatModifier {
         aspect: "float",
         dream: "float",
         reveal: "float",
+        peopleMask: "sampler2D",
+        peopleStrength: "float",
+        peopleDepth: "float",
       },
       outTypes: { gsplat: dyno.Gsplat },
       statements: ({ inputs, outputs }) =>
@@ -70,6 +91,14 @@ export function provenanceModifier(u: ProvenanceUniforms): GsplatModifier {
           float inferred = clamp(1.0 - observed - imagined, 0.0, 1.0);
 
           vec4 rgba = ${inputs.gsplat}.rgba;
+
+          // Hide the splat's copy of a person where their photo layer stands (see peopleMask).
+          if (${inputs.peopleStrength} > 0.001 && observed > 0.0) {
+            float m = texture(${inputs.peopleMask}, ndc * 0.5 + 0.5).a;
+            float near = 1.0 - smoothstep(0.6, 1.2, abs(-c.z - ${inputs.peopleDepth}));
+            rgba.a *= 1.0 - ${inputs.peopleStrength} * m * near * ahead;
+          }
+
           float lum = dot(rgba.rgb, vec3(0.299, 0.587, 0.114));
 
           // MEMORY <-> DREAM. Imagined space recedes most, inferred halfway.
@@ -97,6 +126,9 @@ export function provenanceModifier(u: ProvenanceUniforms): GsplatModifier {
         aspect: u.aspect,
         dream: u.dream,
         reveal: u.reveal,
+        peopleMask: u.peopleMask,
+        peopleStrength: u.peopleStrength,
+        peopleDepth: u.peopleDepth,
       }).gsplat,
     };
   });

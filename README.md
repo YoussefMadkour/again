@@ -20,6 +20,15 @@ Drop a photo, or choose **or enter a memory** for the demo. Press **STEP INSIDE*
 
 ## Status
 
+### Accurate faces: photo layers ✅
+
+- The photograph's own pixels where the world model can't rebuild them: people (SAM 3
+  cutouts at their depth, exact near the viewpoint) and flat things like framed photos and
+  portraits (on the wall's plane, right from any angle). See [`ROADMAP`](docs/ROADMAP.md).
+- Every generated 3D object is compressed for the browser (Hunyuan3D 33 → 1.2 MB, TRELLIS
+  1.5 → 0.15 MB).
+- Reconstructed objects have a quiet marker: a pulsing ring, the name on hover, a dot once seen.
+
 ### Provenance (P7) ✅
 
 - **MEMORY ━━●━━ DREAM**: at MEMORY, space the photograph never saw fades to a dim fog.
