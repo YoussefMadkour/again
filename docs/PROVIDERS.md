@@ -105,3 +105,20 @@ What mattered more than the model:
 - **Erasing the splat under a mesh** must hug the object: a region as deep as the mesh cut
   holes in the wall behind a sewing machine, and one reaching down cut into the table under
   the lamp.
+
+## Jev: decisions over the scene (`lib/ai/providers/real/jev.ts`)
+
+Gemini describes the photo; Jev (TypeSafe's System One model) makes the calls that follow from
+the description. It's text-only, returns calibrated probabilities, ~1s and ~$0.0001 a memory.
+Code keeps the arithmetic (object size is bucketed in code) and the policy (thresholds, caps).
+
+| Decision | Question | Policy |
+|---|---|---|
+| What each object becomes | Choice: `object3d` / `photo` / `world`, plus a Score for how much it matters to the memory | 3D objects need confidence ≥ 0.5 and the size rules; ranked by meaning; photo layers need ≥ 0.4 |
+| No voices | Noul per sound prompt: would it contain an individual human voice? | > 0.5 → the sound is dropped before ElevenLabs is paid |
+| Public gallery | Nouls: child undressed or bathing, nudity, medical, readable personal details | any > 0.5 → held for `scripts/gallery.ts approve <id>`; held entries can't be opened by link |
+
+Why: Gemini's own labels were inconsistent between runs (the same sewing machine was "splat"
+then "mesh"; the dining table and a bare light bulb were "mesh" both times). Jev's calls on the
+same two readings matched each other at 0.88–1.00 confidence and picked only the lamp. Without
+a key, everything falls back to the vision model's labels and gallery publishing is unscreened.

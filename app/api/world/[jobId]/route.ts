@@ -64,7 +64,11 @@ async function progressExtras(jobId: string) {
   }
 }
 
-/** The maker opted in when they started the job; publish the finished world once. */
+/**
+ * The maker opted in when they started the job; publish the finished world once. With Jev
+ * configured, it's screened first (from the scene description), and anything sensitive (a
+ * child bathing, a hospital bed, a readable address…) waits for the owner's approval.
+ */
 async function publishIfShared(
   jobId: string,
   world: Extract<GenerationStatus, { state: "succeeded" }>["result"],
@@ -73,8 +77,23 @@ async function publishIfShared(
   const store = getStore();
   const record = await store.get<JobRecord>(jobKey(jobId));
   if (!record?.share || record.published) return;
+  const x = await readExtras(store, jobId);
+  // Screen the scene before it's public: wait for the analysis if it's still running.
+  if (x && x.analysis.state === "pending") return;
+  const { judge } = getExtrasDeps();
+  let heldReasons: string[] = [];
+  if (judge) {
+    heldReasons = x?.analysis.result
+      ? await judge.sensitivity(x.analysis.result).catch(() => ["unscreened"])
+      : ["unscreened"];
+  }
   await store.set(jobKey(jobId), { ...record, published: true }, 60 * 60 * 24 * 2);
-  await addToGallery(store, world, { jobId, extras });
+  await addToGallery(store, world, {
+    jobId,
+    extras,
+    held: heldReasons.length > 0,
+    heldReasons: heldReasons.length > 0 ? heldReasons : undefined,
+  });
 }
 
 function json(body: StatusResponse) {

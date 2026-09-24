@@ -20,6 +20,12 @@ Drop a photo, or choose **or enter a memory** for the demo. Press **STEP INSIDE*
 
 ## Status
 
+### Jev decisions ✅
+
+- Jev decides what each object becomes (3D object / photo layer / part of the world) and how
+  much it matters, drops sounds that would contain a voice, and holds sensitive shared
+  memories for review. See [`PROVIDERS`](docs/PROVIDERS.md#jev-decisions-over-the-scene-libaiprovidersrealjevts).
+
 ### Accurate faces: photo layers ✅
 
 - The photograph's own pixels where the world model can't rebuild them: people (SAM 3

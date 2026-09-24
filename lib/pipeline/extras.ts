@@ -10,7 +10,9 @@
 import type {
   AudioProvider,
   FileStorage,
+  Judge,
   Object3DProvider,
+  ObjectDecision,
   SegmentProvider,
   VisionProvider,
 } from "@/lib/ai/types";
@@ -70,6 +72,8 @@ export interface Extras {
   sounds: SoundState[] | null;
   /** Undefined on memories made before layers existed. */
   layers?: LayerState[] | null;
+  /** Jev's per-object calls, when it made them (kept for transparency and debugging). */
+  decisions?: ObjectDecision[];
   createdAt: string;
 }
 
@@ -92,6 +96,8 @@ export interface ExtrasDeps {
   object3d: Object3DProvider | null;
   audio: AudioProvider | null;
   storage: FileStorage | null;
+  /** Calibrated judgments (Jev). Without it, the vision model's own calls are used. */
+  judge?: Judge | null;
   /** Crops the photo to a box (with padding) and returns image bytes. */
   crop: (photoUrl: string, bbox: BoundingBox) => Promise<Uint8Array<ArrayBuffer>>;
   /** Cuts a photo layer out of the photograph as a transparent PNG. */
@@ -164,13 +170,16 @@ export async function advanceExtras(jobId: string, deps: ExtrasDeps): Promise<Ex
     // 2. Plan hero objects and sounds from it.
     if (x.analysis.state !== "pending" && x.objects === null) {
       const analysis = x.analysis.result;
-      x.objects = analysis ? planObjects(analysis) : [];
-      x.sounds = analysis ? planSounds(analysis) : [];
-      x.layers = analysis ? planLayers(analysis) : [];
+      if (analysis && deps.judge && !x.decisions) {
+        x.decisions = await deps.judge.representations(analysis).catch(() => undefined);
+      }
+      x.objects = analysis ? planObjects(analysis, x.decisions) : [];
+      x.sounds = analysis ? await guardVoices(planSounds(analysis), deps.judge) : [];
+      x.layers = analysis ? planLayers(analysis, x.decisions) : [];
       await save();
     }
     if (x.analysis.state !== "pending" && x.layers == null) {
-      x.layers = x.analysis.result ? planLayers(x.analysis.result) : [];
+      x.layers = x.analysis.result ? planLayers(x.analysis.result, x.decisions) : [];
       await save();
     }
 
@@ -187,8 +196,11 @@ export async function advanceExtras(jobId: string, deps: ExtrasDeps): Promise<Ex
   }
 }
 
-export function planObjects(analysis: MemoryAnalysis): HeroObjectState[] {
-  return selectHeroObjects(analysis.objects).map((o) => ({
+export function planObjects(
+  analysis: MemoryAnalysis,
+  decisions?: ObjectDecision[],
+): HeroObjectState[] {
+  return selectHeroObjects(analysis.objects, decisions).map((o) => ({
     id: o.id,
     label: o.label,
     description: o.description,
@@ -226,8 +238,27 @@ export function planSounds(analysis: MemoryAnalysis): SoundState[] {
   return [...ambient, ...positional];
 }
 
+/** Voices of the people in a photo are never made up: such sounds are dropped unmade. */
+export const VOICE_LIMIT = 0.5;
+
+async function guardVoices(sounds: SoundState[], judge?: Judge | null): Promise<SoundState[]> {
+  if (!judge || sounds.length === 0) return sounds;
+  const voiced = await judge.voices(sounds.map((s) => s.prompt)).catch(() => null);
+  if (!voiced) return sounds;
+  return sounds.map((s, i) =>
+    voiced[i] > VOICE_LIMIT ? { ...s, state: "skipped", error: "would contain a voice" } : s,
+  );
+}
+
 /** People (confidently seen, with a box) and flat things whose exact pixels matter. */
-export function planLayers(analysis: MemoryAnalysis): LayerState[] {
+export function planLayers(analysis: MemoryAnalysis, decisions?: ObjectDecision[]): LayerState[] {
+  const decided = new Map((decisions ?? []).map((d) => [d.id, d]));
+  const isFlat = (o: MemoryAnalysis["objects"][number]) => {
+    const d = decided.get(o.id);
+    return d
+      ? d.representation === "photo" && d.confidence >= 0.4
+      : o.recommendedRepresentation === "preserve";
+  };
   const people = analysis.people
     .filter((p) => p.bbox && p.confidence >= 0.5)
     .slice(0, LAYER_BUDGET.people)
@@ -241,9 +272,7 @@ export function planLayers(analysis: MemoryAnalysis): LayerState[] {
       }),
     );
   const flat = analysis.objects
-    .filter(
-      (o) => o.bbox && o.provenance === "observed" && o.recommendedRepresentation === "preserve",
-    )
+    .filter((o) => o.bbox && o.provenance === "observed" && isFlat(o))
     .slice(0, LAYER_BUDGET.flat)
     .map(
       (o): LayerState => ({

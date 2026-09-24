@@ -22,6 +22,7 @@ import {
   isMeshModel,
 } from "./providers/real/fal";
 import { GeminiVisionProvider } from "./providers/real/gemini";
+import { JevJudge } from "./providers/real/jev";
 import type { FileStorage, VisionProvider } from "./types";
 
 /**
@@ -54,6 +55,7 @@ export function getExtrasDeps(): ExtrasDeps {
     object3d: fal && new FalMeshProvider(fal, meshModel()),
     audio: elevenKey && storage ? new ElevenLabsAudioProvider(elevenKey, storage) : null,
     storage,
+    judge: process.env.TYPESAFE_API_KEY ? new JevJudge(process.env.TYPESAFE_API_KEY) : null,
     crop: cropToBox,
     optimizeMesh: optimizeRemoteGlb,
     cutout: fal

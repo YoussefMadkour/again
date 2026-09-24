@@ -2,9 +2,10 @@
 //   tsx --env-file=.env.local scripts/gallery.ts list
 //   tsx --env-file=.env.local scripts/gallery.ts add <world_id>     (a world on your World Labs key)
 //   tsx --env-file=.env.local scripts/gallery.ts remove <gallery_id>
+//   tsx --env-file=.env.local scripts/gallery.ts approve <gallery_id>   (publish a held memory)
 // Uses Upstash Redis when KV_REST_API_URL/TOKEN are set, otherwise .data/store.json.
 import { WorldLabsProvider } from "../lib/ai/providers/real/worldlabs";
-import { addToGallery, listGallery, removeFromGallery } from "../lib/gallery";
+import { addToGallery, approveGalleryEntry, listGallery, removeFromGallery } from "../lib/gallery";
 import { getStore } from "../lib/store";
 
 const [command, arg] = process.argv.slice(2);
@@ -13,6 +14,7 @@ const store = getStore();
 if (command === "list") {
   for (const e of await listGallery(store)) {
     console.log(
+      e.held ? `HELD (${(e.heldReasons ?? []).join(", ")})` : "public",
       e.id,
       e.createdAt.slice(0, 10),
       e.world.metadata.worldId ?? "",
@@ -26,9 +28,13 @@ if (command === "list") {
   if (status.state !== "succeeded") throw new Error(`world isn't ready (${status.state})`);
   const entry = await addToGallery(store, status.result);
   console.log(entry ? `added ${entry.id} → /?memory=${entry.id}` : "world has no source photo");
+} else if (command === "approve" && arg) {
+  console.log((await approveGalleryEntry(store, arg)) ? "approved: now public" : "not found");
 } else if (command === "remove" && arg) {
   console.log((await removeFromGallery(store, arg)) ? "removed" : "not found");
 } else {
-  console.log("usage: gallery.ts list | add <world_id> | remove <gallery_id>");
+  console.log(
+    "usage: gallery.ts list | add <world_id> | approve <gallery_id> | remove <gallery_id>",
+  );
   process.exit(1);
 }

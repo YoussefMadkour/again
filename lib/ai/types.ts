@@ -96,3 +96,19 @@ export interface FileStorage {
   /** Stores bytes and returns a public, unguessable URL. */
   upload(bytes: Uint8Array<ArrayBuffer>, contentType: string, fileName: string): Promise<string>;
 }
+
+export interface ObjectDecision {
+  id: string;
+  representation: "object3d" | "photo" | "world";
+  /** How concentrated the judgment was, 0..1. */
+  confidence: number;
+  /** How much the object matters to this memory, 0..1. */
+  meaning: number;
+}
+
+/** Calibrated judgments over the scene manifest (text only). */
+export interface Judge {
+  representations(analysis: MemoryAnalysis): Promise<ObjectDecision[]>;
+  voices(prompts: string[]): Promise<number[]>;
+  sensitivity(analysis: MemoryAnalysis): Promise<string[]>;
+}

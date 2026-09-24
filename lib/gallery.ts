@@ -18,6 +18,9 @@ export interface GalleryEntry {
   /** The generation job, so objects and sounds can be attached when they finish. */
   jobId?: string;
   extras?: PublicExtras;
+  /** Held for the owner's review before it's public (see judge.sensitivity). */
+  held?: boolean;
+  heldReasons?: string[];
 }
 
 /** What the homepage needs; the world assets are fetched only when an entry is opened. */
@@ -31,21 +34,35 @@ export async function listGallery(store: Store): Promise<GalleryEntry[]> {
 }
 
 export async function galleryCards(store: Store): Promise<GalleryCard[]> {
-  return (await listGallery(store)).map(({ id, photoUrl, thumbnailUrl }) => ({
-    id,
-    photoUrl,
-    thumbnailUrl,
-  }));
+  return (await listGallery(store))
+    .filter((e) => !e.held)
+    .map(({ id, photoUrl, thumbnailUrl }) => ({
+      id,
+      photoUrl,
+      thumbnailUrl,
+    }));
 }
 
-export async function getGalleryEntry(store: Store, id: string) {
-  return (await listGallery(store)).find((e) => e.id === id) ?? null;
+/** A public entry. Held entries can't be opened by link until approved. */
+export async function getGalleryEntry(store: Store, id: string, includeHeld = false) {
+  const entry = (await listGallery(store)).find((e) => e.id === id) ?? null;
+  return entry && (includeHeld || !entry.held) ? entry : null;
+}
+
+export async function approveGalleryEntry(store: Store, id: string): Promise<boolean> {
+  const entries = await listGallery(store);
+  const entry = entries.find((e) => e.id === id);
+  if (!entry) return false;
+  entry.held = false;
+  entry.heldReasons = undefined;
+  await store.set(KEY, entries);
+  return true;
 }
 
 export async function addToGallery(
   store: Store,
   world: WorldResult,
-  extra: { jobId?: string; extras?: PublicExtras } = {},
+  extra: { jobId?: string; extras?: PublicExtras; held?: boolean; heldReasons?: string[] } = {},
 ): Promise<GalleryEntry | null> {
   if (!world.sourcePhotoUrl) return null;
   const entries = await listGallery(store);
