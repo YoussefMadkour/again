@@ -2,12 +2,13 @@
 
 import { useFrame } from "@react-three/fiber";
 import type { SplatMesh } from "@sparkjsdev/spark";
-import { type RefObject, useEffect, useMemo, useRef, useState } from "react";
+import { type RefObject, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import type { BoundingBox } from "@/lib/analysis/schema";
 import type { OriginalCamera } from "@/lib/demo/memory";
 import { fitFigureCapsule } from "@/lib/world/figure";
 import { type LayerQuad, layerQuad } from "@/lib/world/placement";
+import { BodyLayer, type BodyModel } from "./BodyLayer";
 import type { WorldFx } from "./fx";
 import type { Hole } from "./GaussianEnvironment";
 import type { ProvenanceUniforms } from "./provenance";
@@ -17,6 +18,8 @@ export interface PhotoLayerInput {
   kind: "person" | "flat";
   /** The region of the photo the layer's image covers. */
   bbox: BoundingBox;
+  /** A person's 3D body (SAM 3D Body), to wear their photo at wider angles. */
+  body?: BodyModel;
   url: string;
 }
 
@@ -297,6 +300,21 @@ function PhotoLayer({
   useEffect(() => () => geometry?.dispose(), [geometry]);
 
   const origin = useMemo(() => new THREE.Vector3(...camera.position), [camera]);
+  const forward = useMemo(
+    () =>
+      new THREE.Vector3(0, 0, -1).applyQuaternion(
+        new THREE.Quaternion().setFromEuler(new THREE.Euler(...camera.rotation, "YXZ")),
+      ),
+    [camera],
+  );
+  const bodyOpacity = useRef(0);
+  // Prototype (SAM 3D Body): opt in with ?body=1. Off by default until the model's own figure
+  // is hidden as well around the body as around the flat cutout (a second head shows at ~30°).
+  const withBody = Boolean(
+    layer.body &&
+      typeof window !== "undefined" &&
+      new URLSearchParams(window.location.search).get("body") === "1",
+  );
   const view = useMemo(() => new THREE.Vector3(), []);
   const fromOrigin = useMemo(
     () => (quad ? quad.center.clone().sub(origin).normalize() : new THREE.Vector3()),
@@ -322,20 +340,49 @@ function PhotoLayer({
     // which means "the world as the model made it".
     const d = dream.current ?? 1;
     const memory = layer.kind === "person" ? 1 - smooth(0.85, 1, d) : 1 - 0.4 * d;
-    material.opacity = w * memory * fx.current.worldOpacity * (1 - fx.current.photoOpacity);
-    if (layer.kind === "person") onStrength(material.opacity);
+    const shown = memory * fx.current.worldOpacity * (1 - fx.current.photoOpacity);
+    if (withBody) {
+      // With a body: the pixel-exact cutout only right at the viewpoint; the body, wearing the
+      // same photo, carries the person much further round before handing back to the splat.
+      const dist = viewer.position.distanceTo(origin);
+      const cos = view.dot(fromOrigin);
+      const flatW = (1 - smooth(0.25, 0.55, dist)) * smooth(COS(12), COS(5), cos);
+      const bodyW = (1 - smooth(1.2, 2.2, dist)) * smooth(COS(60), COS(40), cos);
+      material.opacity = flatW * shown;
+      bodyOpacity.current = bodyW * shown;
+      onStrength(Math.max(material.opacity, bodyOpacity.current));
+    } else {
+      material.opacity = w * shown;
+      if (layer.kind === "person") onStrength(material.opacity);
+    }
     if (mesh.current) mesh.current.visible = material.opacity > 0.002;
   });
 
   if (!geometry) return null;
   return (
-    <mesh
-      ref={mesh}
-      geometry={geometry}
-      material={material}
-      // After the splat, under hero meshes' depth and the photo plane (10).
-      renderOrder={5}
-      name={`layer-${layer.id}`}
-    />
+    <>
+      <mesh
+        ref={mesh}
+        geometry={geometry}
+        material={material}
+        // After the splat, under hero meshes' depth and the photo plane (10); over the body.
+        renderOrder={6}
+        name={`layer-${layer.id}`}
+      />
+      {withBody && layer.body && quad && material.map && (
+        // Its own boundary: loading the mesh must never suspend the rest of the world.
+        <Suspense fallback={null}>
+          <BodyLayer
+            body={layer.body}
+            camera={camera}
+            aspect={photoAspect}
+            texture={material.map}
+            imageBox={layer.bbox}
+            depth={quad.center.clone().sub(origin).dot(forward)}
+            opacity={bodyOpacity}
+          />
+        </Suspense>
+      )}
+    </>
   );
 }

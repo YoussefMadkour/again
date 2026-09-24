@@ -21,6 +21,22 @@ So the photograph's own pixels are laid back into the world (`lib/pipeline/layer
 What's left: a faint trace of the splat figure's outline where the model's copy strays
 furthest from the photo; people can't be seen from behind (there's nothing to show).
 
+### Prototype: people as 3D bodies wearing their photo (`?body=1`)
+
+`fal-ai/sam-3/3d-body` ($0.02, ~16s) returns a posed body mesh per person, in its own camera
+frame. Its camera agreed with our calibration (44.1° vs 45.05°; 3.6m vs our 4.0m). The mesh
+is aligned by re-projecting its field of view into ours, scaling about the camera to the
+splat's depth, and rotating by our camera; the person's cutout is then projected onto it
+from the original camera, fading on surfaces that faced away (`components/world/BodyLayer.tsx`).
+
+Result on the 1946 room: from ~30° off, she is still photographic (face, hair, apron wrap
+the body) where the flat cutout has already handed back to the model's blank figure. But
+the model's figure is hidden around World Labs' placement of her, not SAM's, so a second
+head shows behind her at that angle. To ship it: fit the hiding capsule to the body mesh
+(it's the better estimate of where she is), move the splat hiding to follow the body, and
+call SAM 3D Body in the pipeline per person layer (with the person's mask as `mask_url`).
+The demo has the body attached; new memories don't call it yet.
+
 **Not doing:** AI face restoration or upscaling. It invents a face that isn't the real person's.
 
 ## Next milestones

@@ -61,6 +61,8 @@ export interface LayerState {
   url?: string;
   /** The region of the photo the PNG covers (the box plus padding). Draw it there. */
   imageBox?: BoundingBox;
+  /** People: a 3D body (SAM 3D Body) to wear the photo at wider angles. */
+  body?: { url: string; fov: number };
 }
 
 export interface Extras {
@@ -88,7 +90,10 @@ export interface PublicExtras {
   >;
   objects: Pick<HeroObjectState, "id" | "label" | "description" | "bbox" | "glbUrl" | "state">[];
   sounds: Pick<SoundState, "id" | "kind" | "description" | "objectId" | "bbox" | "url" | "state">[];
-  layers?: Pick<LayerState, "id" | "kind" | "label" | "bbox" | "imageBox" | "url" | "state">[];
+  layers?: Pick<
+    LayerState,
+    "id" | "kind" | "label" | "bbox" | "imageBox" | "url" | "state" | "body"
+  >[];
 }
 
 export interface ExtrasDeps {
@@ -456,7 +461,7 @@ export function toPublicExtras(x: Extras): PublicExtras {
       glbUrl,
       state,
     })),
-    layers: (x.layers ?? []).map(({ id, kind, label, bbox, imageBox, url, state }) => ({
+    layers: (x.layers ?? []).map(({ id, kind, label, bbox, imageBox, url, state, body }) => ({
       id,
       kind,
       label,
@@ -464,6 +469,7 @@ export function toPublicExtras(x: Extras): PublicExtras {
       imageBox,
       url,
       state,
+      body,
     })),
     sounds: (x.sounds ?? []).map(({ id, kind, description, objectId, bbox, url, state }) => ({
       id,

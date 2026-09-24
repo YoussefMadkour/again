@@ -72,7 +72,7 @@ export default function MemoryWorld({
     () =>
       (extras?.layers ?? []).flatMap((l) =>
         l.state === "done" && l.url
-          ? [{ id: l.id, kind: l.kind, bbox: l.imageBox ?? l.bbox, url: l.url }]
+          ? [{ id: l.id, kind: l.kind, bbox: l.imageBox ?? l.bbox, url: l.url, body: l.body }]
           : [],
       ),
     [extras],
