@@ -1,6 +1,6 @@
 # AGAIN.
 
-**Walk into a memory.**
+**Walk into a memory.** Live at **[step-in-memory.vercel.app](https://step-in-memory.vercel.app)**.
 
 AGAIN. takes an old photograph and turns it into a place you can step inside. The camera moves toward the print, passes through its surface, and you're standing in the room. You can turn around, walk to the window, pick up the lamp. Throughout, it's honest about which parts the photograph actually saw and which parts a model imagined.
 
@@ -119,6 +119,16 @@ AGAIN. fits one onto the other. It uses a scale-aware ICP (Umeyama similarity, t
 
 ![Luna Park, around 1905: the original plate and the colourised version the world was built from](docs/images/luna-park-restored.jpg)
 
+**One room, two photographs.** The Blue Room at Longfellow House, 1917. Frank Cousins photographed it twice: the canopy bed, and the fireplace wall.
+
+- **One world from both:** Marble takes several views of the same space, so the world holds both walls and the doors between them.
+- **You walk in through the bed view.**
+- **Colourised in place,** like Luna Park, with the originals kept for the slider.
+
+![The Blue Room, 1917: the original plate and its colour version](docs/images/blue-room-restored.jpg)
+
+![Inside the Blue Room, built from both photographs](docs/images/blue-room-inside.jpg)
+
 **One lesson from a second room.** In a Riviera salon, the cheap image-to-3D model (TRELLIS, 2 cents an object) melted the armchairs: one-sided crops, hidden backs, pieces of neighbouring chairs. So the default is now Hunyuan3D (about 37 cents), and furniture is left to the world model, which rebuilt it far better.
 
 ---
@@ -168,6 +178,7 @@ For real generation, set the keys in `.env.local` (see [`docs/SWAP_TO_REAL.md`](
 | Script | |
 |---|---|
 | `pnpm test` / `pnpm test:e2e` | unit tests / Playwright end to end |
+| `scripts/generate-room.ts <main.jpg> <other.jpg> [...]` | one world from several photographs of a room |
 | `scripts/extras.ts <id> [--people] [--all-objects] [--remesh]` | run or extend a memory's analysis, objects, people and sound |
 | `scripts/add-music.ts <id> <url>` | give a memory its score |
 | `scripts/gallery.ts list \| approve \| original <id> <url>` | curate the gallery; attach the real photograph behind a restored one |
@@ -180,4 +191,5 @@ More detail: [`DEMO_SCRIPT`](docs/DEMO_SCRIPT.md) (the 3-minute walkthrough) · 
 ## Photographs
 
 - **Living room, 1946.** Russell Lee for the U.S. Coal Mines Administration, National Archives 540360. Public domain (a U.S. federal work).
+- **The Blue Room, Longfellow House, Cambridge, 1917.** Frank Cousins. Public domain (published before 1929). Colourised in place; the originals are kept.
 - **"Aerial Swing", Luna Park, Coney Island, around 1905.** A glass-plate negative (its number, 0-9862, is on the plate), believed public domain by age; its archive source still needs confirming. Colourised in place for the world; the original is kept and shown alongside.
