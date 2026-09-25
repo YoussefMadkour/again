@@ -19,6 +19,11 @@ export interface GalleryEntry {
    * (a black-and-white original, colourised in place): the home carousel shows both.
    */
   originalPhotoUrl?: string;
+  /** Shown under the photograph on the home screen: a short title and one sentence. */
+  title?: string;
+  caption?: string;
+  /** Where it sits in the home carousel (lower first; unset ones follow, newest first). */
+  position?: number;
   world: WorldResult;
   /** The generation job, so objects and sounds can be attached when they finish. */
   jobId?: string;
@@ -31,7 +36,7 @@ export interface GalleryEntry {
 /** What the homepage needs; the world assets are fetched only when an entry is opened. */
 export type GalleryCard = Pick<
   GalleryEntry,
-  "id" | "photoUrl" | "thumbnailUrl" | "originalPhotoUrl"
+  "id" | "photoUrl" | "thumbnailUrl" | "originalPhotoUrl" | "title" | "caption"
 >;
 
 const KEY = "gallery";
@@ -42,14 +47,18 @@ export async function listGallery(store: Store): Promise<GalleryEntry[]> {
 }
 
 export async function galleryCards(store: Store): Promise<GalleryCard[]> {
+  const rank = (e: GalleryEntry) => e.position ?? Number.POSITIVE_INFINITY;
   return (await listGallery(store))
     .filter((e) => !e.held)
-    .map(({ id, photoUrl, thumbnailUrl, originalPhotoUrl }) => ({
+    .sort((a, b) => rank(a) - rank(b) || b.createdAt.localeCompare(a.createdAt))
+    .map(({ id, photoUrl, thumbnailUrl, originalPhotoUrl, title, caption }) => ({
       id,
       photoUrl,
       thumbnailUrl,
-      // Only restored memories carry it.
+      // Only restored and captioned memories carry these.
       ...(originalPhotoUrl ? { originalPhotoUrl } : {}),
+      ...(title ? { title } : {}),
+      ...(caption ? { caption } : {}),
     }));
 }
 
@@ -115,6 +124,20 @@ export interface JobRecord {
 }
 
 export const jobKey = (jobId: string) => `job:${jobId}`;
+
+/** Sets how a memory is presented on the home screen: title, one sentence, position. */
+export async function describeGalleryEntry(
+  store: Store,
+  id: string,
+  patch: Pick<GalleryEntry, "title" | "caption" | "position">,
+) {
+  const entries = await listGallery(store);
+  const entry = entries.find((e) => e.id === id);
+  if (!entry) return false;
+  Object.assign(entry, patch);
+  await store.set(KEY, entries);
+  return true;
+}
 
 /** Records the real photograph behind a restored one (see originalPhotoUrl). */
 export async function setOriginalPhoto(store: Store, id: string, url: string) {

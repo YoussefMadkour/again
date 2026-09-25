@@ -5,18 +5,20 @@
 //   tsx --env-file=.env.local scripts/gallery.ts approve <gallery_id>   (publish a held memory)
 //   tsx --env-file=.env.local scripts/gallery.ts original <gallery_id> <url>
 //     (the real photograph behind a restored one: the carousel shows a before/after slider)
+//   tsx --env-file=.env.local scripts/gallery.ts describe <gallery_id> "<title>" "<one sentence>" [position]
 // Uses Upstash Redis when KV_REST_API_URL/TOKEN are set, otherwise .data/store.json.
 import { WorldLabsProvider } from "../lib/ai/providers/real/worldlabs";
 import {
   addToGallery,
   approveGalleryEntry,
+  describeGalleryEntry,
   listGallery,
   removeFromGallery,
   setOriginalPhoto,
 } from "../lib/gallery";
 import { getStore } from "../lib/store";
 
-const [command, arg, arg2] = process.argv.slice(2);
+const [command, arg, arg2, arg3, arg4] = process.argv.slice(2);
 const store = getStore();
 
 if (command === "list") {
@@ -38,13 +40,20 @@ if (command === "list") {
   console.log(entry ? `added ${entry.id} → /?memory=${entry.id}` : "world has no source photo");
 } else if (command === "approve" && arg) {
   console.log((await approveGalleryEntry(store, arg)) ? "approved: now public" : "not found");
+} else if (command === "describe" && arg && arg2) {
+  const position = arg4 === undefined ? undefined : Number(arg4);
+  console.log(
+    (await describeGalleryEntry(store, arg, { title: arg2, caption: arg3, position }))
+      ? "described"
+      : "not found",
+  );
 } else if (command === "original" && arg && arg2) {
   console.log((await setOriginalPhoto(store, arg, arg2)) ? "original photograph set" : "not found");
 } else if (command === "remove" && arg) {
   console.log((await removeFromGallery(store, arg)) ? "removed" : "not found");
 } else {
   console.log(
-    "usage: gallery.ts list | add <world_id> | approve <gallery_id> | remove <gallery_id> | original <gallery_id> <url>",
+    "usage: gallery.ts list | add <world_id> | approve <gallery_id> | remove <gallery_id> | original <gallery_id> <url> | describe <gallery_id> <title> <sentence> [position]",
   );
   process.exit(1);
 }

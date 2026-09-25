@@ -1,6 +1,6 @@
 "use client";
 
-import { motion } from "framer-motion";
+import { AnimatePresence, motion } from "framer-motion";
 import { type PointerEvent, useEffect, useRef, useState } from "react";
 
 export interface CarouselMemory {
@@ -12,6 +12,9 @@ export interface CarouselMemory {
   testId?: string;
   /** The real photograph, when this one is a restoration of it: shown with a before/after slider. */
   originalUrl?: string;
+  /** Under the photograph while it's in front: a short title and one sentence. */
+  title?: string;
+  caption?: string;
   onOpen: () => void;
 }
 
@@ -101,7 +104,32 @@ export function MemoryCarousel({ memories }: Props) {
         })}
       </ul>
       <div className="flex flex-col items-center gap-3">
-        <p className="font-mono text-[11px] lowercase tracking-[0.35em] text-bone/55">
+        <div className="flex min-h-[4.5rem] w-[min(34rem,86vw)] flex-col items-center justify-start text-center">
+          <AnimatePresence mode="wait">
+            {(memories[active]?.title || memories[active]?.caption) && (
+              <motion.div
+                key={memories[active]?.id}
+                initial={{ opacity: 0, y: 4 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -4 }}
+                transition={{ duration: 0.45, ease: EASE }}
+                className="flex flex-col items-center gap-2"
+              >
+                {memories[active]?.title && (
+                  <h2 className="font-display text-[clamp(1.25rem,2.4vw,1.75rem)] leading-tight text-bone">
+                    {memories[active]?.title}
+                  </h2>
+                )}
+                {memories[active]?.caption && (
+                  <p className="max-w-[30rem] text-[13px] leading-relaxed text-bone/60">
+                    {memories[active]?.caption}
+                  </p>
+                )}
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+        <p className="font-mono text-[10px] lowercase tracking-[0.35em] text-bone/40">
           click the photograph to walk in
         </p>
         {count > 1 && (

@@ -9,3 +9,8 @@ playwright-report
 .data
 .vercel
 .env*
+
+# Added by the Vercel CLI (Upstash agent skills), not part of the app
+.agents/
+.claude/skills/
+skills-lock.json

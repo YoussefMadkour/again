@@ -420,6 +420,8 @@ export function Experience({ gallery: initialGallery, access, exploreOnly = fals
                     id: DEMO_MEMORY.id,
                     photoUrl: DEMO_MEMORY.photoUrl,
                     label: "enter a memory: a living room, 1946",
+                    title: DEMO_MEMORY.title,
+                    caption: DEMO_MEMORY.caption,
                     onOpen: openDemo,
                   },
                   // Shared memories (the demo's own gallery entry is the demo, above).
@@ -431,6 +433,8 @@ export function Experience({ gallery: initialGallery, access, exploreOnly = fals
                       label: "enter a shared memory",
                       testId: "gallery-card",
                       originalUrl: card.originalPhotoUrl,
+                      title: card.title,
+                      caption: card.caption,
                       onOpen: () => openGallery(card.id),
                     })),
                 ]}
