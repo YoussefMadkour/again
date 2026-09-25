@@ -173,7 +173,7 @@ For real generation, set the keys in `.env.local` (see [`docs/SWAP_TO_REAL.md`](
 | `scripts/gallery.ts list \| approve \| original <id> <url>` | curate the gallery; attach the real photograph behind a restored one |
 | `scripts/bake-demo.ts` | bake a memory into `public/demo/` so it works offline |
 
-More detail: [`ARCHITECTURE`](docs/ARCHITECTURE.md) · [`PROVIDERS`](docs/PROVIDERS.md) (costs, models, and why each was chosen) · [`ROADMAP`](docs/ROADMAP.md) · [`DEMO`](docs/DEMO.md)
+More detail: [`DEMO_SCRIPT`](docs/DEMO_SCRIPT.md) (the 3-minute walkthrough) · [`ARCHITECTURE`](docs/ARCHITECTURE.md) · [`PROVIDERS`](docs/PROVIDERS.md) (costs, models, and why each was chosen) · [`ROADMAP`](docs/ROADMAP.md) · [`DEMO`](docs/DEMO.md)
 
 ---
 
