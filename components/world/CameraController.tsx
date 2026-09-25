@@ -256,6 +256,13 @@ export function CameraController({
 
     const lookK = 1 - Math.exp(-dt * 10);
     state.yaw += (state.targetYaw - state.yaw) * lookK;
+    // Development only: where the camera is looking, for recording demos (scripts/record-demo.mjs).
+    if (process.env.NODE_ENV === "development") {
+      (window as unknown as { __againLook?: { yaw: number; target: number } }).__againLook = {
+        yaw: state.yaw,
+        target: state.targetYaw,
+      };
+    }
     state.pitch += (state.targetPitch - state.pitch) * lookK;
 
     _yaw.setFromAxisAngle(UP, state.yaw);

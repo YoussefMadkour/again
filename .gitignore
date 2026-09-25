@@ -14,3 +14,6 @@ playwright-report
 .agents/
 .claude/skills/
 skills-lock.json
+
+# The demo video: hosted with the site (CLI deploys), too big for git
+public/again-demo.mp4
