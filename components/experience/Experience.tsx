@@ -75,6 +75,7 @@ export function Experience({ gallery, access }: Props) {
   /** 0 = MEMORY, 1 = DREAM. Starts leaning to the dream, so the world is whole but the
    * unseen parts are a little quieter than the photographed ones. */
   const [dream, setDream] = useState(0.75);
+  const [photoLayers, setPhotoLayers] = useState(true);
   const [revealing, setRevealing] = useState(false);
   const [beyond, setBeyond] = useState(false);
   const card = useRef<CardRect | null>(null);
@@ -344,6 +345,7 @@ export function Experience({ gallery, access }: Props) {
             }}
             seenObjects={seenObjects}
             dream={dream}
+            photoLayers={photoLayers}
             revealing={revealing}
             frozen={Boolean(evidence) || beyond}
             onBeyond={() => {
@@ -555,6 +557,11 @@ export function Experience({ gallery, access }: Props) {
             hasObjects={Boolean(extras?.objects.some((o) => o.state === "done"))}
             dream={dream}
             onDream={setDream}
+            hasPhotoLayers={Boolean(
+              extras?.layers?.some((l) => l.kind === "flat" && l.state === "done"),
+            )}
+            photoLayers={photoLayers}
+            onTogglePhotoLayers={() => setPhotoLayers((v) => !v)}
           />
         )}
       </AnimatePresence>
@@ -602,6 +609,9 @@ function ExploreHud({
   hasObjects,
   dream,
   onDream,
+  hasPhotoLayers,
+  photoLayers,
+  onTogglePhotoLayers,
 }: {
   onReturn: () => void;
   onLeave: () => void;
@@ -611,8 +621,20 @@ function ExploreHud({
   hasObjects: boolean;
   dream: number;
   onDream: (v: number) => void;
+  hasPhotoLayers: boolean;
+  photoLayers: boolean;
+  onTogglePhotoLayers: () => void;
 }) {
   const [hintVisible, setHintVisible] = useState(true);
+  // P: the photo's own pixels on the walls, or the world model's.
+  useEffect(() => {
+    if (!hasPhotoLayers) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.code === "KeyP" && !(e.target instanceof HTMLInputElement)) onTogglePhotoLayers();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [hasPhotoLayers, onTogglePhotoLayers]);
   useEffect(() => {
     const id = setTimeout(() => setHintVisible(false), 7000);
     return () => clearTimeout(id);
@@ -638,6 +660,17 @@ function ExploreHud({
       <div className="absolute bottom-7 left-1/2 -translate-x-1/2">
         <MemoryDreamSlider value={dream} onChange={onDream} />
       </div>
+      {hasPhotoLayers && (
+        <button
+          type="button"
+          onClick={onTogglePhotoLayers}
+          aria-pressed={photoLayers}
+          title="the photograph's own pixels on the walls, or the world model's (P)"
+          className={`${QUIET_BUTTON} absolute top-6 left-6`}
+        >
+          {photoLayers ? "photo layers on" : "photo layers off"}
+        </button>
+      )}
       {hasSound && (
         <button
           type="button"

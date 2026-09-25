@@ -112,3 +112,22 @@ export interface Judge {
   voices(prompts: string[]): Promise<number[]>;
   sensitivity(analysis: MemoryAnalysis): Promise<string[]>;
 }
+
+export type PersonModelStatus =
+  | { state: "pending" }
+  | { state: "failed"; error: string }
+  | {
+      state: "succeeded";
+      /** Every detected person's posed body, one `person_NN` node each, in the camera's frame. */
+      bodyGlbUrl: string;
+      /** The person's detailed shape (hair, face, clothes), from their cutout alone. */
+      shapeGlbUrl: string;
+      /** Per detected person: box in photo pixels, and the camera's focal length in pixels. */
+      people: { index: number; bbox: [number, number, number, number]; focalLength: number }[];
+    };
+
+/** A person as a 3D model: a complete posed body from the photo, plus their look from a cutout. */
+export interface PersonModelProvider {
+  submit(photoUrl: string, cutoutUrl: string): Promise<string>;
+  poll(handle: string): Promise<PersonModelStatus>;
+}

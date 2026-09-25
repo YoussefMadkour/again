@@ -50,8 +50,8 @@
         "url": "/demo/1946/layer-person-1.png",
         "state": "done",
         "body": {
-          "url": "/demo/1946/body-person-1.glb",
-          "fov": 44.064
+          "url": "/demo/1946/person-layer-person-1.glb",
+          "fov": 44.06
         }
       },
       {

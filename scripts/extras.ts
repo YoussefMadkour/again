@@ -1,12 +1,16 @@
 // Runs the real scene analysis → hero objects → sound pipeline for a gallery memory, and
 // attaches the result to it. Spends fal (~$0.03 analysis + $0.375 per object) and ElevenLabs
-// credits (40/s). Usage: tsx --env-file=.env.local scripts/extras.ts <gallery_id>
+// credits (40/s), plus ~$0.40 per person in 3D. Usage:
+//   tsx --env-file=.env.local scripts/extras.ts <gallery_id> [--layers] [--people]
+// --people gives people layers made before person models their 3D model (or retries one).
+// --refit rebuilds finished person models from their paid-for results (free).
 
 import { LocalStorage } from "../lib/ai/providers/local-storage";
 import { ElevenLabsAudioProvider } from "../lib/ai/providers/real/elevenlabs";
 import {
   FalClient,
   FalMeshProvider,
+  FalPersonProvider,
   FalSegmentProvider,
   FalStorage,
   FalVisionProvider,
@@ -19,6 +23,7 @@ import { cropToBox } from "../lib/pipeline/crop";
 import { advanceExtras, readExtras, startExtras, toPublicExtras } from "../lib/pipeline/extras";
 import { cutoutFlat, cutoutPerson } from "../lib/pipeline/layers";
 import { optimizeRemoteGlb } from "../lib/pipeline/optimize-glb";
+import { fitPerson } from "../lib/pipeline/person";
 import { getStore } from "../lib/store";
 
 const [galleryId] = process.argv.slice(2);
@@ -55,6 +60,8 @@ const deps = {
   storage,
   crop: cropToBox,
   optimizeMesh: optimizeRemoteGlb,
+  person3d: new FalPersonProvider(fal),
+  fitPerson,
   findFrames: (photoUrl: string) => findFrames(fal, photoUrl),
   cutout: (
     photoUrl: string,
@@ -81,6 +88,18 @@ if (!existing) {
     if (o.state === "failed")
       Object.assign(o, { state: "pending", error: undefined, meshHandle: undefined });
   }
+  if (process.argv.includes("--people")) {
+    for (const l of existing.layers ?? []) {
+      if (l.kind === "person" && l.bodyState !== "done" && l.bodyState !== "running") {
+        Object.assign(l, { bodyState: "pending", bodyError: undefined, bodyHandle: undefined });
+      }
+    }
+  }
+  if (process.argv.includes("--refit")) {
+    for (const l of existing.layers ?? []) {
+      if (l.kind === "person" && l.bodyHandle) Object.assign(l, { bodyState: "running" });
+    }
+  }
   await store.set(`extras:${jobId}`, existing, 60 * 60 * 24 * 7);
 }
 for (let i = 0; ; i++) {
@@ -93,6 +112,11 @@ for (let i = 0; ; i++) {
     pub.objects.map((o) => `${o.id}:${o.state}`).join(" ") || "-",
     "sounds:",
     pub.sounds.map((s) => `${s.kind}:${s.state}`).join(" ") || "-",
+    "people:",
+    (x.layers ?? [])
+      .filter((l) => l.kind === "person")
+      .map((l) => `${l.id}:${l.bodyState ?? "-"}${l.bodyError ? ` (${l.bodyError})` : ""}`)
+      .join(" ") || "-",
   );
   if (pub.done) {
     await updateGalleryExtras(store, jobId, pub);

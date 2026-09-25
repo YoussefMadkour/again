@@ -7,7 +7,8 @@ import * as THREE from "three";
 import type { BoundingBox } from "@/lib/analysis/schema";
 import type { OriginalCamera } from "@/lib/demo/memory";
 import { fitFigureCapsule } from "@/lib/world/figure";
-import { type LayerQuad, layerQuad } from "@/lib/world/placement";
+import { growBox, shadowHole, wallHole } from "@/lib/world/holes";
+import { type LayerQuad, layerQuad, rayThroughPhoto } from "@/lib/world/placement";
 import { BodyLayer, type BodyModel } from "./BodyLayer";
 import type { WorldFx } from "./fx";
 import type { Hole } from "./GaussianEnvironment";
@@ -18,6 +19,10 @@ export interface PhotoLayerInput {
   kind: "person" | "flat";
   /** The region of the photo the layer's image covers. */
   bbox: BoundingBox;
+  /** What it is, in the vision model's words ("held framed portrait"). */
+  label?: string;
+  /** The thing itself, inside that region (the image is padded). */
+  frame?: BoundingBox;
   /** A person's 3D body (SAM 3D Body), to wear their photo at wider angles. */
   body?: BodyModel;
   url: string;
@@ -35,6 +40,8 @@ interface Props {
   onHoles: (holes: Hole[]) => void;
   /** Gets the people mask, and how strongly person layers show, each frame. */
   provenance: ProvenanceUniforms;
+  /** Draw the flat layers (portraits, frames). Off shows the world's own copies of them. */
+  showFlat?: boolean;
 }
 
 const MASK_WIDTH = 512;
@@ -63,6 +70,7 @@ export function PhotoLayers({
   dream,
   onHoles,
   provenance,
+  showFlat = true,
 }: Props) {
   const holes = useRef(new Map<string, Hole>());
   const report = useRef(onHoles);
@@ -79,14 +87,28 @@ export function PhotoLayers({
     const silhouette = document.createElement("canvas");
     silhouette.width = canvas.width;
     silhouette.height = canvas.height;
-    return { canvas, texture, silhouette };
+    // Grown a little, for flat layers to cut people out of: a frame on the wall behind someone
+    // carries their pixels in its cutout, and pasted flat on the wall those read as a ghost.
+    const trim = document.createElement("canvas");
+    trim.width = canvas.width;
+    trim.height = canvas.height;
+    const trimTexture = new THREE.CanvasTexture(trim);
+    trimTexture.flipY = true;
+    return { canvas, texture, silhouette, trim, trimTexture };
   }, [photoAspect]);
   const personStrength = useRef(new Map<string, number>());
+  // The splat's figure core, kept so the capsule can be refit once a person's model is placed.
+  const figure = useRef<{ silhouette: (u: number, v: number) => number; depth: number } | null>(
+    null,
+  );
 
   useEffect(() => {
     provenance.peopleMask.value = mask.texture;
     return () => {
       provenance.peopleStrength.value = 0;
+      mask.trimTexture.dispose();
+      provenance.peopleFront.value = 0;
+      provenance.peopleBack.value = 0;
       mask.texture.dispose();
     };
   }, [mask, provenance]);
@@ -100,7 +122,8 @@ export function PhotoLayers({
   const addPerson = (image: CanvasImageSource, [x0, y0, x1, y1]: BoundingBox, depth: number) => {
     const ctx = mask.canvas.getContext("2d");
     const core = mask.silhouette.getContext("2d", { willReadFrequently: true });
-    if (!ctx || !core) return;
+    const trim = mask.trim.getContext("2d");
+    if (!ctx || !core || !trim) return;
     const { width, height } = mask.canvas;
     const at = (dx: number, dy: number, target: CanvasRenderingContext2D) =>
       target.drawImage(
@@ -111,6 +134,16 @@ export function PhotoLayers({
         (y1 - y0) * height,
       );
     at(0, 0, core);
+    const edge = Math.max(1, Math.round(width * 0.006));
+    for (const [dx, dy] of [
+      [0, 0],
+      [edge, 0],
+      [-edge, 0],
+      [0, edge],
+      [0, -edge],
+    ])
+      at(dx, dy, trim);
+    mask.trimTexture.needsUpdate = true;
     // Grown generously: the capsule below keeps the hiding off the wall behind the person.
     const grow = Math.round(width * 0.045);
     const step = Math.max(1, Math.round(grow / 3));
@@ -122,23 +155,43 @@ export function PhotoLayers({
 
     // Find the world model's own figure of this person, in 3D.
     const pixels = core.getImageData(0, 0, width, height).data;
+    figure.current = {
+      silhouette: (u, v) =>
+        pixels[(Math.floor(v * (height - 1)) * width + Math.floor(u * (width - 1))) * 4 + 3] / 255,
+      depth,
+    };
+    fitCapsule();
+  };
+
+  /** The hiding volume: around the splat's figure, and around the person's model when placed
+   * (the two sit a few centimetres apart; hiding only one leaves a second head). */
+  const fitCapsule = (model?: Float32Array) => {
+    if (!figure.current) return null;
     const capsule = fitFigureCapsule(
       splat,
       camera,
       photoAspect,
-      (u, v) =>
-        pixels[(Math.floor(v * (height - 1)) * width + Math.floor(u * (width - 1))) * 4 + 3] / 255,
-      depth,
+      figure.current.silhouette,
+      figure.current.depth,
+      model,
     );
-    if (capsule) {
-      provenance.peopleCapsule.value.set(capsule.x, capsule.z, capsule.radius, 1);
-      provenance.peopleHeight.value.set(capsule.yMin, capsule.yMax);
-      if (process.env.NODE_ENV === "development") console.info("[again] figure capsule", capsule);
-    }
+    if (!capsule) return null;
+    provenance.peopleCapsule.value.set(capsule.x, capsule.z, capsule.radius, 1);
+    provenance.peopleHeight.value.set(capsule.yMin, capsule.yMax);
+    if (process.env.NODE_ENV === "development") console.info("[again] figure capsule", capsule);
+    return capsule;
   };
+
+  // The room's depth from the original camera, without the person: what stands in front of them.
+  const [backdrop, setBackdrop] = useState<Backdrop | null>(null);
+  // Where things the person holds are, in the photo: the model's copies of them are clipped.
+  const [held, setHeld] = useState<ReadonlySet<string>>(new Set());
 
   return (
     <>
+      {backdrop && (
+        <WallBackdrop backdrop={backdrop} camera={camera} aspect={photoAspect} fx={fx} />
+      )}
       {layers.map((layer) => (
         <PhotoLayer
           key={layer.id}
@@ -153,11 +206,234 @@ export function PhotoLayers({
             report.current([...holes.current.values()]);
           }}
           onPerson={addPerson}
+          people={mask.trimTexture}
+          onModel={(points) => {
+            const capsule = fitCapsule(points);
+            const [front, back] = depthRange(points, camera);
+            provenance.peopleFront.value = front;
+            // Through the world's figure too: it can stand a little behind the person as shown.
+            provenance.peopleBack.value = Math.max(back, (capsule?.far ?? 0) + 0.05);
+            // Her shadow on the wall behind her (a flash photo's): at the viewpoint it sits
+            // behind her, from the side it reads as a second person. Painted out.
+            const shadow = shadowHole(
+              splat,
+              camera,
+              photoAspect,
+              `${layer.id}-shadow`,
+              layer.frame ?? layer.bbox,
+              provenance.peopleBack.value,
+            );
+            // Something she's holding (the vision model says so, and it's at her hand): her model
+            // holds its own, with her hand; the flat photo layer of it (on the wall) is dropped.
+            const heldLayers = layers.filter(
+              (l) =>
+                l.kind === "flat" &&
+                // The vision model names it in its id or label ("held-framed-portrait").
+                HELD.test(`${l.id.replace(/-/g, " ")} ${l.label ?? ""}`) &&
+                silhouetteCover(mask.silhouette, l.frame ?? l.bbox) > 0.02,
+            );
+            setHeld(new Set(heldLayers.map((l) => l.id)));
+            const holding = heldLayers.map((l) => growBox(l.frame ?? l.bbox, 0.04, 0.003));
+            // And the world's copy of it, in her hand (the layer's own hole is on the wall).
+            const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(
+              new THREE.Quaternion().setFromEuler(new THREE.Euler(...camera.rotation, "YXZ")),
+            );
+            const mid = (front + back) / 2;
+            holding.forEach((box, i) => {
+              const ray = rayThroughPhoto(
+                camera,
+                photoAspect,
+                (box[0] + box[2]) / 2,
+                (box[1] + box[3]) / 2,
+              );
+              const center = ray.at(
+                mid / Math.max(0.2, ray.direction.dot(forward)),
+                new THREE.Vector3(),
+              );
+              const w = rayThroughPhoto(camera, photoAspect, box[0], box[1]).at(
+                mid,
+                new THREE.Vector3(),
+              );
+              const h = rayThroughPhoto(camera, photoAspect, box[2], box[3]).at(
+                mid,
+                new THREE.Vector3(),
+              );
+              const id = `${layer.id}-held-${i}`;
+              holes.current.set(id, {
+                id,
+                kind: "object",
+                box: box as [number, number, number, number],
+                center,
+                radius: w.distanceTo(h) * 0.6,
+                front: center.distanceTo(new THREE.Vector3(...camera.position)) - front + 0.05,
+                back: back - mid + 0.05,
+                floor: Number.NEGATIVE_INFINITY,
+              });
+            });
+            report.current([...holes.current.values()]);
+            if (shadow) {
+              // Pictures on the wall near her are darker than the wall too: left alone.
+              for (const l of layers) {
+                if (l.kind !== "flat" || heldLayers.includes(l)) continue;
+                const id = `${l.id}-keep`;
+                holes.current.set(id, {
+                  id,
+                  kind: "keep",
+                  box: growBox(l.frame ?? l.bbox, 0.1, 0.004),
+                  center: new THREE.Vector3(),
+                });
+              }
+              holes.current.set(shadow.id, shadow);
+              report.current([...holes.current.values()]);
+              if (shadow.kind === "wall") {
+                setBackdrop({
+                  center: shadow.center,
+                  normal: shadow.normal,
+                  color: shadow.color,
+                  // Head to waist: lower down, furniture can stand behind the wall's plane.
+                  box: upperHalf(growBox(layer.frame ?? layer.bbox, 0.15, 0.005)),
+                });
+              }
+            }
+          }}
           onStrength={(s) => personStrength.current.set(layer.id, s)}
+          hidden={(!showFlat && layer.kind === "flat") || held.has(layer.id)}
         />
       ))}
     </>
   );
+}
+
+/** How much of a photo box the people's silhouettes cover, 0..1. */
+function silhouetteCover(silhouette: HTMLCanvasElement, [x0, y0, x1, y1]: readonly number[]) {
+  const ctx = silhouette.getContext("2d", { willReadFrequently: true });
+  if (!ctx) return 0;
+  const { width, height } = silhouette;
+  const left = Math.floor(x0 * width);
+  const top = Math.floor(y0 * height);
+  const w = Math.max(1, Math.ceil((x1 - x0) * width));
+  const h = Math.max(1, Math.ceil((y1 - y0) * height));
+  const { data } = ctx.getImageData(left, top, w, h);
+  let covered = 0;
+  for (let i = 3; i < data.length; i += 4) if (data[i] > 128) covered++;
+  return covered / (w * h);
+}
+
+const HELD = /\b(held|holding|in (her|his|their) hands?)\b/i;
+
+const upperHalf = ([x0, y0, x1, y1]: readonly number[]) =>
+  [x0, y0, x1, y0 + (y1 - y0) * 0.5] as const;
+
+interface Backdrop {
+  center: THREE.Vector3;
+  normal: THREE.Vector3;
+  color: THREE.Color;
+  box: readonly [number, number, number, number];
+}
+
+/**
+ * The wall behind a person, as a plain surface just behind the world's own wall. The world
+ * model's wall is thin where it put its figure of them; with the figure hidden, you'd see
+ * through it (a dark shape like a second person). The world's wall draws over this, so it
+ * only shows through those gaps.
+ */
+function WallBackdrop({
+  backdrop,
+  camera,
+  aspect,
+  fx,
+}: {
+  backdrop: Backdrop;
+  camera: OriginalCamera;
+  aspect: number;
+  fx: RefObject<WorldFx>;
+}) {
+  const mesh = useRef<THREE.Mesh>(null);
+  const geometry = useMemo(() => {
+    const plane = new THREE.Plane().setFromNormalAndCoplanarPoint(
+      backdrop.normal,
+      backdrop.center.clone().addScaledVector(backdrop.normal, -0.06),
+    );
+    const [x0, y0, x1, y1] = backdrop.box;
+    const corners = [
+      [x0, y0],
+      [x1, y0],
+      [x1, y1],
+      [x0, y1],
+    ].map(([u, v]) =>
+      rayThroughPhoto(camera, aspect, u, v).intersectPlane(plane, new THREE.Vector3()),
+    );
+    if (corners.some((c) => !c)) return null;
+    const g = new THREE.BufferGeometry().setFromPoints(corners as THREE.Vector3[]);
+    g.setAttribute("uv", new THREE.Float32BufferAttribute([0, 0, 1, 0, 1, 1, 0, 1], 2));
+    g.setIndex([0, 3, 1, 1, 3, 2]);
+    return g;
+  }, [backdrop, camera, aspect]);
+  // Under the splats (drawn first, not writing depth): it only shows where the world's wall is
+  // thin, and fades out toward its edges so it never reads as a panel.
+  const material = useMemo(() => {
+    const { r, g, b } = backdrop.color;
+    return new THREE.ShaderMaterial({
+      uniforms: {
+        // Splat colours are display values; three treats a material colour as linear.
+        color: { value: new THREE.Color(r, g, b) },
+      },
+      vertexShader: /* glsl */ `
+        varying vec2 vUv;
+        void main() {
+          vUv = uv;
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+      `,
+      fragmentShader: /* glsl */ `
+        uniform vec3 color;
+        varying vec2 vUv;
+        void main() {
+          float edge = min(min(vUv.x, 1.0 - vUv.x), min(vUv.y, 1.0 - vUv.y));
+          gl_FragColor = vec4(color, smoothstep(0.0, 0.3, edge));
+          #include <colorspace_fragment>
+        }
+      `,
+      transparent: true,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+    });
+  }, [backdrop]);
+  useEffect(() => () => geometry?.dispose(), [geometry]);
+  useEffect(() => () => material.dispose(), [material]);
+  useFrame(() => {
+    // Only once the world is fully in (the world fades in over the photo).
+    if (mesh.current) mesh.current.visible = fx.current.worldOpacity > 0.98;
+  });
+  if (!geometry) return null;
+  return (
+    <mesh
+      ref={mesh}
+      geometry={geometry}
+      material={material}
+      renderOrder={-2}
+      name="wall-backdrop"
+    />
+  );
+}
+
+/** The model's depth range along the original camera (2nd..98th percentile), with margins. */
+function depthRange(points: Float32Array, camera: OriginalCamera): [number, number] {
+  const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(
+    new THREE.Quaternion().setFromEuler(new THREE.Euler(...camera.rotation, "YXZ")),
+  );
+  const [ox, oy, oz] = camera.position;
+  const depths: number[] = [];
+  for (let i = 0; i < points.length; i += 3) {
+    depths.push(
+      (points[i] - ox) * forward.x +
+        (points[i + 1] - oy) * forward.y +
+        (points[i + 2] - oz) * forward.z,
+    );
+  }
+  depths.sort((a, b) => a - b);
+  const at = (p: number) => depths[Math.floor((depths.length - 1) * p)];
+  return [Math.max(0.05, at(0.02) - 0.03), at(0.98) + 0.1];
 }
 
 /** Up to ~40 points (0..1 in the image) where the texture is opaque. */
@@ -188,7 +464,10 @@ function PhotoLayer({
   dream,
   onHole,
   onPerson,
+  people,
+  onModel,
   onStrength,
+  hidden,
 }: {
   layer: PhotoLayerInput;
   splat: SplatMesh;
@@ -198,6 +477,11 @@ function PhotoLayer({
   dream: RefObject<number>;
   onHole: (hole: Hole) => void;
   onPerson: (image: CanvasImageSource, box: BoundingBox, depth: number) => void;
+  /** Where people are in the photo (alpha), to cut out of flat layers. */
+  people: THREE.Texture;
+  onModel: (points: Float32Array) => void;
+  /** Not drawn (photo layers off, or something the person's model holds itself). */
+  hidden: boolean;
   onStrength: (strength: number) => void;
 }) {
   const mesh = useRef<THREE.Mesh>(null);
@@ -223,17 +507,32 @@ function PhotoLayer({
     return g;
   }, [quad]);
 
-  const material = useMemo(
-    () =>
-      new THREE.MeshBasicMaterial({
-        transparent: true,
-        opacity: 0,
-        depthWrite: false,
-        side: THREE.DoubleSide,
-        toneMapped: false,
-      }),
-    [],
-  );
+  const material = useMemo(() => {
+    const m = new THREE.MeshBasicMaterial({
+      transparent: true,
+      opacity: 0,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+      toneMapped: false,
+    });
+    if (layer.kind === "flat") {
+      // Nobody's pixels on the wall: people are carried by their own layer.
+      const [x0, y0, x1, y1] = layer.bbox;
+      m.onBeforeCompile = (shader) => {
+        shader.uniforms.people = { value: people };
+        shader.uniforms.box = { value: new THREE.Vector4(x0, y0, x1, y1) };
+        shader.fragmentShader = shader.fragmentShader
+          .replace("void main() {", "uniform sampler2D people;\nuniform vec4 box;\nvoid main() {")
+          .replace(
+            "#include <map_fragment>",
+            `#include <map_fragment>
+            vec2 inPhoto = vec2(mix(box.x, box.z, vMapUv.x), mix(box.y, box.w, 1.0 - vMapUv.y));
+            diffuseColor.a *= 1.0 - texture2D(people, vec2(inPhoto.x, 1.0 - inPhoto.y)).a;`,
+          );
+      };
+    }
+    return m;
+  }, [layer.kind, layer.bbox, people]);
 
   useEffect(() => {
     let cancelled = false;
@@ -276,19 +575,20 @@ function PhotoLayer({
             .join(","),
         );
       }
-      // Flat things: erase the splat's blurry copy under the layer, with a thin slab on the
-      // wall. (Not people: the splat around them is the room, and must stay.)
+      // Flat things: repaint the world's blurry copy as wall (not people: the splat around
+      // them is the room, and must stay).
       if (q && !person) {
-        const [tl, tr, , bl] = q.corners;
-        holeRef.current({
-          id: layer.id,
-          center: q.center.clone(),
-          size: new THREE.Vector3(tl.distanceTo(tr) * 0.5, tl.distanceTo(bl) * 0.5, 0.03),
-          quaternion: new THREE.Quaternion().setFromUnitVectors(
-            new THREE.Vector3(0, 0, 1),
-            q.normal,
+        holeRef.current(
+          wallHole(
+            splat,
+            camera,
+            photoAspect,
+            layer.id,
+            layer.frame ?? layer.bbox,
+            q.center.clone(),
+            q.normal.clone(),
           ),
-        });
+        );
       }
     });
     return () => {
@@ -308,12 +608,11 @@ function PhotoLayer({
     [camera],
   );
   const bodyOpacity = useRef(0);
-  // Prototype (SAM 3D Body): opt in with ?body=1. Off by default until the model's own figure
-  // is hidden as well around the body as around the flat cutout (a second head shows at ~30°).
+  // The person's model when they have one (?body=0 compares without it).
   const withBody = Boolean(
     layer.body &&
-      typeof window !== "undefined" &&
-      new URLSearchParams(window.location.search).get("body") === "1",
+      (typeof window === "undefined" ||
+        new URLSearchParams(window.location.search).get("body") !== "0"),
   );
   const view = useMemo(() => new THREE.Vector3(), []);
   const fromOrigin = useMemo(
@@ -342,19 +641,16 @@ function PhotoLayer({
     const memory = layer.kind === "person" ? 1 - smooth(0.85, 1, d) : 1 - 0.4 * d;
     const shown = memory * fx.current.worldOpacity * (1 - fx.current.photoOpacity);
     if (withBody) {
-      // With a body: the pixel-exact cutout only right at the viewpoint; the body, wearing the
-      // same photo, carries the person much further round before handing back to the splat.
-      const dist = viewer.position.distanceTo(origin);
-      const cos = view.dot(fromOrigin);
-      const flatW = (1 - smooth(0.25, 0.55, dist)) * smooth(COS(12), COS(5), cos);
-      const bodyW = (1 - smooth(1.2, 2.2, dist)) * smooth(COS(60), COS(40), cos);
-      material.opacity = flatW * shown;
-      bodyOpacity.current = bodyW * shown;
-      onStrength(Math.max(material.opacity, bodyOpacity.current));
+      // With a model: only the model (the flat cutout beside it, a few cm apart, reads as a
+      // double). The world's own figure stays hidden throughout.
+      material.opacity = 0;
+      bodyOpacity.current = shown;
+      onStrength(shown);
     } else {
       material.opacity = w * shown;
       if (layer.kind === "person") onStrength(material.opacity);
     }
+    if (hidden) material.opacity = 0;
     if (mesh.current) mesh.current.visible = material.opacity > 0.002;
   });
 
@@ -375,11 +671,9 @@ function PhotoLayer({
           <BodyLayer
             body={layer.body}
             camera={camera}
-            aspect={photoAspect}
-            texture={material.map}
-            imageBox={layer.bbox}
             depth={quad.center.clone().sub(origin).dot(forward)}
             opacity={bodyOpacity}
+            onPlaced={onModel}
           />
         </Suspense>
       )}

@@ -6,6 +6,8 @@ import type {
   FileStorage,
   MeshStatus,
   Object3DProvider,
+  PersonModelProvider,
+  PersonModelStatus,
   SegmentProvider,
   VisionProvider,
 } from "@/lib/ai/types";
@@ -195,6 +197,62 @@ export class FalMeshProvider implements Object3DProvider {
     const out = await this.fal.result<FalFiles>(response);
     const glbUrl = MESH_MODELS[model ?? this.model].output(out);
     return glbUrl ? { state: "succeeded", glbUrl } : { state: "failed", error: "no mesh returned" };
+  }
+}
+
+type FalJob = { status_url: string; response_url: string };
+type BodyOut = {
+  model_glb?: { url?: string };
+  metadata?: {
+    people?: { person_id?: number; bbox: [number, number, number, number]; focal_length: number }[];
+  };
+};
+
+/**
+ * A person in 3D, from two models run side by side: SAM 3D Body ($0.02) poses a complete body
+ * from the whole photo, and Hunyuan3D ($0.375) rebuilds their look (hair, face, clothes) from
+ * the cutout. lib/pipeline/person.ts fits one onto the other.
+ */
+export class FalPersonProvider implements PersonModelProvider {
+  constructor(private readonly fal: FalClient) {}
+
+  async submit(photoUrl: string, cutoutUrl: string): Promise<string> {
+    const [body, shape] = await Promise.all([
+      this.fal.submit("fal-ai/sam-3/3d-body", { image_url: photoUrl }),
+      this.fal.submit(
+        MESH_MODELS["hunyuan3d-v3"].endpoint,
+        MESH_MODELS["hunyuan3d-v3"].input(cutoutUrl),
+      ),
+    ]);
+    const job = ({ status_url, response_url }: FalJob) => ({ status_url, response_url });
+    return JSON.stringify({ body: job(body), shape: job(shape) });
+  }
+
+  async poll(handle: string): Promise<PersonModelStatus> {
+    const { body, shape } = JSON.parse(handle) as { body: FalJob; shape: FalJob };
+    const [b, s] = await Promise.all([
+      this.fal.status(body.status_url),
+      this.fal.status(shape.status_url),
+    ]);
+    if (b.error || s.error) return { state: "failed", error: (b.error ?? s.error) as string };
+    if (b.status !== "COMPLETED" || s.status !== "COMPLETED") return { state: "pending" };
+    const [bodyOut, shapeOut] = await Promise.all([
+      this.fal.result<BodyOut>(body.response_url),
+      this.fal.result<FalFiles>(shape.response_url),
+    ]);
+    const bodyGlbUrl = bodyOut.model_glb?.url;
+    const shapeGlbUrl = MESH_MODELS["hunyuan3d-v3"].output(shapeOut);
+    if (!bodyGlbUrl || !shapeGlbUrl) return { state: "failed", error: "no mesh returned" };
+    return {
+      state: "succeeded",
+      bodyGlbUrl,
+      shapeGlbUrl,
+      people: (bodyOut.metadata?.people ?? []).map((p, i) => ({
+        index: p.person_id ?? i,
+        bbox: p.bbox,
+        focalLength: p.focal_length,
+      })),
+    };
   }
 }
 

@@ -19,6 +19,14 @@ test("demo memory → step inside → world → look and move → return", async
   });
   await expect(page.getByTestId("explore-hud")).toBeVisible();
 
+  // The photo's own pixels on the walls, or the world model's: a button, and P.
+  const layersButton = page.getByRole("button", { name: /photo layers/ });
+  await expect(layersButton).toHaveText("photo layers on");
+  await layersButton.click();
+  await expect(layersButton).toHaveText("photo layers off");
+  await page.keyboard.press("KeyP");
+  await expect(layersButton).toHaveText("photo layers on");
+
   const canvas = page.locator("canvas");
   const before = await canvas.screenshot();
   await page.mouse.move(720, 450);

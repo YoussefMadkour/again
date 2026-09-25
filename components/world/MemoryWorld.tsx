@@ -41,6 +41,8 @@ interface Props {
   onBeyond: () => void;
   /** Hero objects whose evidence has been opened. */
   seenObjects: ReadonlySet<string>;
+  /** The photo's own pixels on the walls (portraits, frames); off shows the world's own. */
+  photoLayers?: boolean;
 }
 
 export default function MemoryWorld({
@@ -59,20 +61,42 @@ export default function MemoryWorld({
   frozen,
   onBeyond,
   seenObjects,
+  photoLayers = true,
 }: Props) {
   const fx = useRef(createWorldFx());
   const capture = mode === "capture";
   const [splat, setSplat] = useState<SplatMesh | null>(null);
   const [objectHoles, setObjectHoles] = useState<Hole[]>([]);
   const [layerHoles, setLayerHoles] = useState<Hole[]>([]);
-  const holes = useMemo(() => [...objectHoles, ...layerHoles], [objectHoles, layerHoles]);
+  const flatIds = useMemo(
+    () => new Set((extras?.layers ?? []).filter((l) => l.kind === "flat").map((l) => l.id)),
+    [extras],
+  );
+  const holes = useMemo(
+    () => [
+      ...objectHoles,
+      // Without the photo layers, the world's own copies of them stay.
+      ...(photoLayers ? layerHoles : layerHoles.filter((h) => !flatIds.has(h.id))),
+    ],
+    [objectHoles, layerHoles, photoLayers, flatIds],
+  );
   const dreamRef = useRef(dream);
   dreamRef.current = dream;
   const layers = useMemo<PhotoLayerInput[]>(
     () =>
       (extras?.layers ?? []).flatMap((l) =>
         l.state === "done" && l.url
-          ? [{ id: l.id, kind: l.kind, bbox: l.imageBox ?? l.bbox, url: l.url, body: l.body }]
+          ? [
+              {
+                id: l.id,
+                kind: l.kind,
+                bbox: l.imageBox ?? l.bbox,
+                frame: l.bbox,
+                label: l.label,
+                url: l.url,
+                body: l.body,
+              },
+            ]
           : [],
       ),
     [extras],
@@ -165,6 +189,7 @@ export default function MemoryWorld({
               fx={fx}
               dream={dreamRef}
               onHoles={setLayerHoles}
+              showFlat={photoLayers}
               provenance={provenance}
             />
           )}
@@ -172,6 +197,8 @@ export default function MemoryWorld({
             objects={objects}
             fx={fx}
             camera={memory.originalCamera}
+            splat={splat}
+            photoAspect={memory.photoAspect}
             onSelect={onSelectObject}
             onHoles={setObjectHoles}
             seen={seenObjects}

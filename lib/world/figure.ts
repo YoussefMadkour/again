@@ -18,6 +18,9 @@ export interface FigureCapsule {
   radius: number;
   yMin: number;
   yMax: number;
+  /** The figure's depth along the original camera (10th and 90th percentile of its core). */
+  near: number;
+  far: number;
 }
 
 interface SplatSource {
@@ -47,6 +50,8 @@ export function fitFigureCapsule(
   silhouette: Silhouette,
   /** The person's depth along the original camera's view, in metres. */
   depth: number,
+  /** The person's placed 3D model (world-space xyz triples): the capsule covers it too. */
+  model?: Float32Array,
 ): FigureCapsule | null {
   splat.updateMatrixWorld(true);
   const toCamera = cameraQuaternion(camera).invert();
@@ -57,6 +62,7 @@ export function fitFigureCapsule(
   const xs: number[] = [];
   const ys: number[] = [];
   const zs: number[] = [];
+  const ds: number[] = [];
 
   splat.forEachSplat((_i, center, _s, _q, opacity) => {
     if (opacity < 0.25) return;
@@ -70,21 +76,43 @@ export function fitFigureCapsule(
     xs.push(world.x);
     ys.push(world.y);
     zs.push(world.z);
+    ds.push(d);
   });
   if (xs.length < 60) return null;
-
-  const sx = [...xs].sort((a, b) => a - b);
-  const sz = [...zs].sort((a, b) => a - b);
-  const sy = [...ys].sort((a, b) => a - b);
-  const x = percentile(sx, 0.5);
-  const z = percentile(sz, 0.5);
-  const radial = xs.map((xi, i) => Math.hypot(xi - x, zs[i] - z)).sort((a, b) => a - b);
+  const splatCount = xs.length;
+  if (model) {
+    for (let i = 0; i < model.length; i += 3) {
+      xs.push(model[i]);
+      ys.push(model[i + 1]);
+      zs.push(model[i + 2]);
+    }
+  }
+  const sorted = (v: number[]) => [...v].sort((a, b) => a - b);
+  // The axis: the model's when there is one (it's the person as shown), else the figure's.
+  const from = model ? splatCount : 0;
+  const x = percentile(sorted(xs.slice(from)), 0.5);
+  const z = percentile(sorted(zs.slice(from)), 0.5);
+  // An envelope of the figure and the model, each measured on its own (pooled, the model's
+  // many vertices would outvote the figure's head and leave it outside).
+  const extent = (lo: number, hi: number) => {
+    const radial = sorted(xs.slice(lo, hi).map((xi, i) => Math.hypot(xi - x, zs[lo + i] - z)));
+    const y = sorted(ys.slice(lo, hi));
+    return {
+      // Wide enough for the figure's offset copy, not the wall behind it.
+      radius: percentile(radial, 0.92) + 0.1,
+      yMin: percentile(y, 0.02) - 0.05,
+      yMax: percentile(y, 0.99) + 0.12,
+    };
+  };
+  const parts = [extent(0, splatCount), ...(model ? [extent(splatCount, xs.length)] : [])];
+  const depths = sorted(ds);
   return {
+    near: percentile(depths, 0.1),
+    far: percentile(depths, 0.9),
     x,
     z,
-    // Wide enough for the figure's offset copy, not the wall behind it.
-    radius: percentile(radial, 0.92) + 0.1,
-    yMin: percentile(sy, 0.02) - 0.05,
-    yMax: percentile(sy, 0.99) + 0.12,
+    radius: Math.max(...parts.map((p) => p.radius)),
+    yMin: Math.min(...parts.map((p) => p.yMin)),
+    yMax: Math.max(...parts.map((p) => p.yMax)),
   };
 }

@@ -2,149 +2,211 @@
 
 import { useGLTF } from "@react-three/drei";
 import { useFrame } from "@react-three/fiber";
-import { type RefObject, useMemo } from "react";
+import { type RefObject, useEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
-import type { BoundingBox } from "@/lib/analysis/schema";
 import type { OriginalCamera } from "@/lib/demo/memory";
 import { cameraQuaternion } from "@/lib/world/placement";
 
 export interface BodyModel {
-  /** SAM 3D Body mesh of this person, in its own camera frame (three.js axes). */
+  /** The person in 3D (lib/pipeline/person.ts), in its model's camera frame (three.js axes). */
   url: string;
-  /** The vertical field of view SAM 3D Body assumed, degrees. */
+  /** The vertical field of view that camera assumed, degrees. */
   fov: number;
 }
 
 interface Props {
   body: BodyModel;
   camera: OriginalCamera;
-  aspect: number;
-  /** The person's cutout (transparent PNG) and the photo region it covers. */
-  texture: THREE.Texture;
-  imageBox: BoundingBox;
   /** How far along the original camera's view the person stands, from the splat. */
   depth: number;
   /** 0..1, set every frame by the photo layer. */
   opacity: RefObject<number>;
+  /** World-space vertices of the placed model, once (for hiding the splat's figure). */
+  onPlaced?: (points: Float32Array) => void;
 }
 
 const vertexShader = /* glsl */ `
   varying vec3 vWorld;
   varying vec3 vNormal;
+  varying vec2 vUv;
   void main() {
     vec4 world = modelMatrix * vec4(position, 1.0);
     vWorld = world.xyz;
     vNormal = normalize(mat3(modelMatrix) * normal);
+    vUv = uv;
     gl_Position = projectionMatrix * viewMatrix * world;
   }
 `;
 
-// The photograph, projected from the original camera onto the body: every surface shows
-// what the photo saw there, and fades by how squarely it faced the camera (the far side of
-// the person was never captured).
+// The model as generated, in its own texture (made from their photo). Drawn before the
+// splats and opaque once fully in (see BodyLayer), so the room occludes it correctly.
 const fragmentShader = /* glsl */ `
-  uniform sampler2D map;
-  uniform vec4 box;
-  uniform mat3 worldToCamera;
-  uniform vec3 origin;
-  uniform float tanHalf;
-  uniform float aspect;
+  uniform sampler2D own;
+  uniform float hasOwn;
+  uniform mat3 ownTransform;
+  uniform vec3 ownColor;
   uniform float opacity;
   varying vec3 vWorld;
   varying vec3 vNormal;
+  varying vec2 vUv;
   void main() {
-    vec3 c = worldToCamera * (vWorld - origin);
-    if (c.z >= 0.0) discard;
-    vec2 ndc = c.xy / -c.z / vec2(tanHalf * aspect, tanHalf);
-    vec2 photo = vec2(ndc.x * 0.5 + 0.5, 0.5 - ndc.y * 0.5);
-    vec2 uv = (photo - box.xy) / (box.zw - box.xy);
-    if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) discard;
-    vec4 color = texture2D(map, vec2(uv.x, 1.0 - uv.y));
-    float facing = dot(normalize(vNormal), normalize(origin - vWorld));
-    float a = color.a * smoothstep(0.05, 0.4, facing) * opacity;
-    if (a < 0.01) discard;
-    gl_FragColor = vec4(color.rgb, a);
+    vec3 n = normalize(vNormal);
+    vec3 base = ownColor;
+    if (hasOwn > 0.5) base *= texture2D(own, (ownTransform * vec3(vUv, 1.0)).xy).rgb;
+    // A little soft light from above, so untextured parts (the legs) read as form.
+    base *= 0.86 + 0.14 * clamp(0.5 + 0.5 * n.y, 0.0, 1.0);
+    if (opacity < 0.01) discard;
+    gl_FragColor = vec4(base, opacity);
     #include <colorspace_fragment>
   }
 `;
 
-/** A person as a 3D body wearing their own photograph: convincing at wider angles than a cutout. */
-export function BodyLayer({ body, camera, aspect, texture, imageBox, depth, opacity }: Props) {
+function textureTransform(map: THREE.Texture | null) {
+  if (!map) return new THREE.Matrix3();
+  map.updateMatrix();
+  return map.matrix.clone();
+}
+
+/** A person as a 3D model, standing where the photo shows them. */
+export function BodyLayer({ body, camera, depth, opacity, onPlaced }: Props) {
   const { scene } = useGLTF(body.url);
 
-  const geometry = useMemo(() => {
-    let found: THREE.Mesh | null = null;
+  const parts = useMemo(() => {
     scene.updateMatrixWorld(true);
+    const meshes: THREE.Mesh[] = [];
     scene.traverse((n) => {
-      const m = n as THREE.Mesh;
-      if (m.isMesh && !found) found = m;
+      if ((n as THREE.Mesh).isMesh) meshes.push(n as THREE.Mesh);
     });
-    if (!found) return null;
-    const source = found as THREE.Mesh;
-    // Compressed meshes store quantized positions with their scale on the node: bake the
+    // Compressed meshes store quantized positions with their scale on the node: bake every
     // node transform into full-precision floats before working in metres.
-    const quantized = source.geometry.getAttribute("position");
-    const floats = new Float32Array(quantized.count * 3);
-    const p = new THREE.Vector3();
-    for (let i = 0; i < quantized.count; i++) {
-      p.fromBufferAttribute(quantized, i).applyMatrix4(source.matrixWorld);
-      floats.set([p.x, p.y, p.z], i * 3);
-    }
-    const g = new THREE.BufferGeometry();
-    g.setAttribute("position", new THREE.BufferAttribute(floats, 3));
-    if (source.geometry.index) g.setIndex(source.geometry.index.clone());
-    const pos = g.getAttribute("position");
-    // 1. Field of view: re-project SAM's camera into ours, so the silhouette lands on the photo.
+    const baked = meshes.map((m) => {
+      const src = m.geometry.getAttribute("position");
+      const floats = new Float32Array(src.count * 3);
+      const p = new THREE.Vector3();
+      for (let i = 0; i < src.count; i++) {
+        p.fromBufferAttribute(src, i).applyMatrix4(m.matrixWorld);
+        floats.set([p.x, p.y, p.z], i * 3);
+      }
+      const g = new THREE.BufferGeometry();
+      g.setAttribute("position", new THREE.BufferAttribute(floats, 3));
+      const uv = m.geometry.getAttribute("uv");
+      if (uv) {
+        const uvs = new Float32Array(uv.count * 2);
+        for (let i = 0; i < uv.count; i++) uvs.set([uv.getX(i), uv.getY(i)], i * 2);
+        g.setAttribute("uv", new THREE.BufferAttribute(uvs, 2));
+      } else {
+        g.setAttribute("uv", new THREE.BufferAttribute(new Float32Array(src.count * 2), 2));
+      }
+      if (m.geometry.index) g.setIndex(m.geometry.index.clone());
+      const mat = (Array.isArray(m.material) ? m.material[0] : m.material) as
+        | THREE.MeshStandardMaterial
+        | undefined;
+      return {
+        geometry: g,
+        map: mat?.map ?? null,
+        color: mat?.color?.clone() ?? new THREE.Color(1, 1, 1),
+      };
+    });
+
+    // 1. Field of view: re-project the model's camera into ours, so its silhouette lands on
+    //    the photo. 2. Scale about the camera (projection-preserving) to the splat's depth.
     const k = Math.tan((camera.fov * Math.PI) / 360) / Math.tan((body.fov * Math.PI) / 360);
-    // 2. Scale about the camera (projection-preserving) to the depth the splat has her at.
     const depths: number[] = [];
-    for (let i = 0; i < pos.count; i++) depths.push(-pos.getZ(i));
+    for (const { geometry } of baked) {
+      const pos = geometry.getAttribute("position");
+      for (let i = 0; i < pos.count; i++) depths.push(-pos.getZ(i));
+    }
     depths.sort((a, b) => a - b);
     const s = depth / depths[Math.floor(depths.length / 2)];
     // 3. Into the world: the original camera's orientation and position.
     const q = cameraQuaternion(camera);
     const o = new THREE.Vector3(...camera.position);
     const v = new THREE.Vector3();
-    for (let i = 0; i < pos.count; i++) {
-      v.set(pos.getX(i) * k * s, pos.getY(i) * k * s, pos.getZ(i) * s)
-        .applyQuaternion(q)
-        .add(o);
-      pos.setXYZ(i, v.x, v.y, v.z);
+    const all: number[] = [];
+    for (const { geometry } of baked) {
+      const pos = geometry.getAttribute("position");
+      for (let i = 0; i < pos.count; i++) {
+        v.set(pos.getX(i) * k * s, pos.getY(i) * k * s, pos.getZ(i) * s)
+          .applyQuaternion(q)
+          .add(o);
+        pos.setXYZ(i, v.x, v.y, v.z);
+        if (i % 4 === 0) all.push(v.x, v.y, v.z);
+      }
+      geometry.computeVertexNormals();
+      geometry.computeBoundingSphere();
     }
-    g.computeVertexNormals();
-    g.computeBoundingSphere();
-    return g;
+    return { baked, points: new Float32Array(all) };
   }, [scene, body.fov, camera, depth]);
 
-  const material = useMemo(
-    () =>
-      new THREE.ShaderMaterial({
-        uniforms: {
-          map: { value: texture },
-          box: { value: new THREE.Vector4(...imageBox) },
-          worldToCamera: {
-            value: new THREE.Matrix3().setFromMatrix4(
-              new THREE.Matrix4().makeRotationFromQuaternion(cameraQuaternion(camera).invert()),
-            ),
+  const placed = useRef(onPlaced);
+  placed.current = onPlaced;
+  useEffect(() => {
+    placed.current?.(parts.points);
+  }, [parts]);
+
+  const materials = useMemo(() => {
+    // Shared by every part's material.
+    const shared = { opacity: { value: 0 } };
+    return parts.baked.map(
+      ({ map, color }) =>
+        new THREE.ShaderMaterial({
+          uniforms: {
+            ...shared,
+            own: { value: map },
+            hasOwn: { value: map ? 1 : 0 },
+            // Quantized texture coordinates come with a transform on the texture.
+            ownTransform: { value: textureTransform(map) },
+            ownColor: { value: color },
           },
-          origin: { value: new THREE.Vector3(...camera.position) },
-          tanHalf: { value: Math.tan((camera.fov * Math.PI) / 360) },
-          aspect: { value: aspect },
-          opacity: { value: 0 },
-        },
-        vertexShader,
-        fragmentShader,
-        transparent: true,
-        depthWrite: true,
-        side: THREE.FrontSide,
-      }),
-    [texture, imageBox, camera, aspect],
+          vertexShader,
+          fragmentShader,
+          transparent: true,
+          depthWrite: true,
+          side: THREE.FrontSide,
+        }),
+    );
+  }, [parts]);
+
+  useEffect(
+    () => () => {
+      for (const m of materials) m.dispose();
+    },
+    [materials],
+  );
+  useEffect(
+    () => () => {
+      for (const { geometry } of parts.baked) geometry.dispose();
+    },
+    [parts],
   );
 
   useFrame(() => {
-    material.uniforms.opacity.value = opacity.current ?? 0;
+    const u = materials[0]?.uniforms;
+    if (!u) return;
+    const a = opacity.current ?? 0;
+    u.opacity.value = a;
+    // Fully in, it's opaque and drawn before the splats: the splats respect depth, so the room
+    // in front of the person (a table before their legs) covers them from wherever you stand,
+    // and whatever the world model left behind them is hidden by them.
+    const opaque = a >= 0.999;
+    for (const m of materials) {
+      if (m.transparent === !opaque) continue;
+      m.transparent = !opaque;
+      m.needsUpdate = true;
+    }
   });
 
-  if (!geometry) return null;
-  return <mesh geometry={geometry} material={material} renderOrder={5} name="body-layer" />;
+  return (
+    <group name="body-layer">
+      {parts.baked.map(({ geometry }, i) => (
+        <mesh
+          // biome-ignore lint/suspicious/noArrayIndexKey: parts are fixed per model
+          key={i}
+          geometry={geometry}
+          material={materials[i]}
+          renderOrder={-1}
+        />
+      ))}
+    </group>
+  );
 }

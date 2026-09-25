@@ -13,6 +13,8 @@ import type {
   Judge,
   Object3DProvider,
   ObjectDecision,
+  PersonModelProvider,
+  PersonModelStatus,
   SegmentProvider,
   VisionProvider,
 } from "@/lib/ai/types";
@@ -61,8 +63,12 @@ export interface LayerState {
   url?: string;
   /** The region of the photo the PNG covers (the box plus padding). Draw it there. */
   imageBox?: BoundingBox;
-  /** People: a 3D body (SAM 3D Body) to wear the photo at wider angles. */
+  /** People: a 3D model of them (see person.ts) to wear the photo at wider angles. */
   body?: { url: string; fov: number };
+  /** Making that model runs on after the cutout is done: the layer is usable meanwhile. */
+  bodyState?: StepState;
+  bodyHandle?: string;
+  bodyError?: string;
 }
 
 export interface Extras {
@@ -114,6 +120,14 @@ export interface ExtrasDeps {
     photoUrl: string,
     layer: LayerState,
   ) => Promise<{ bytes: Uint8Array<ArrayBuffer>; box: BoundingBox }>;
+  /** People in 3D: their posed body and their look (see PersonModelProvider). */
+  person3d?: PersonModelProvider | null;
+  /** Fits a finished person model into one mesh, with its camera's field of view. */
+  fitPerson?: (
+    result: Extract<PersonModelStatus, { state: "succeeded" }>,
+    box: BoundingBox,
+    photoUrl: string,
+  ) => Promise<{ bytes: Uint8Array<ArrayBuffer>; fov: number }>;
   /** Compresses a finished mesh for the browser; null when it wouldn't help. */
   optimizeMesh?: (glbUrl: string) => Promise<Uint8Array<ArrayBuffer> | null>;
 }
@@ -286,6 +300,7 @@ export function planLayers(analysis: MemoryAnalysis, decisions?: ObjectDecision[
         label: "person",
         bbox: p.bbox as BoundingBox,
         state: "pending",
+        bodyState: "pending",
       }),
     );
   const flat = analysis.objects
@@ -347,19 +362,56 @@ function overlap(a: BoundingBox, b: BoundingBox): number {
 }
 
 async function advanceLayer(l: LayerState, photoUrl: string | null, deps: ExtrasDeps) {
-  if (l.state !== "pending") return;
-  if (!deps.cutout || !deps.storage || !photoUrl) {
-    l.state = "skipped";
-    return;
+  if (l.state === "pending") {
+    if (!deps.cutout || !deps.storage || !photoUrl) {
+      l.state = "skipped";
+      return;
+    }
+    try {
+      const cut = await deps.cutout(photoUrl, l);
+      l.url = await deps.storage.upload(cut.bytes, "image/png", `${l.id}-${randomId(6)}.png`);
+      l.imageBox = cut.box;
+      l.state = "done";
+    } catch (error) {
+      l.state = "failed";
+      l.error = message(error);
+      return;
+    }
+  }
+  if (l.kind === "person" && l.state === "done") await advanceBody(l, photoUrl, deps);
+}
+
+/** A person's 3D model, from their finished cutout. Failing leaves the flat layer as it was. */
+async function advanceBody(l: LayerState, photoUrl: string | null, deps: ExtrasDeps) {
+  // Layers from before person models have no bodyState: viewing them never starts paid work.
+  if (l.bodyState === "pending" && !(deps.person3d && deps.fitPerson && deps.storage && l.url)) {
+    l.bodyState = "skipped";
   }
   try {
-    const cut = await deps.cutout(photoUrl, l);
-    l.url = await deps.storage.upload(cut.bytes, "image/png", `${l.id}-${randomId(6)}.png`);
-    l.imageBox = cut.box;
-    l.state = "done";
+    if (l.bodyState === "pending" && deps.person3d && photoUrl && l.url) {
+      l.bodyHandle = await deps.person3d.submit(photoUrl, l.url);
+      l.bodyState = "running";
+      return;
+    }
+    if (l.bodyState === "running" && l.bodyHandle && deps.person3d && photoUrl) {
+      const status = await deps.person3d.poll(l.bodyHandle);
+      if (status.state === "failed") {
+        l.bodyState = "failed";
+        l.bodyError = status.error;
+      } else if (status.state === "succeeded" && deps.fitPerson && deps.storage) {
+        const { bytes, fov } = await deps.fitPerson(status, l.bbox, photoUrl);
+        const url = await deps.storage.upload(
+          bytes,
+          "model/gltf-binary",
+          `person-${l.id}-${randomId(6)}.glb`,
+        );
+        l.body = { url, fov: Math.round(fov * 100) / 100 };
+        l.bodyState = "done";
+      }
+    }
   } catch (error) {
-    l.state = "failed";
-    l.error = message(error);
+    l.bodyState = "failed";
+    l.bodyError = message(error);
   }
 }
 
@@ -445,7 +497,7 @@ export function toPublicExtras(x: Extras): PublicExtras {
       x.objects !== null &&
       x.objects.every((o) => settled(o.state)) &&
       (x.sounds ?? []).every((s) => settled(s.state)) &&
-      (x.layers ?? []).every((l) => settled(l.state)),
+      (x.layers ?? []).every((l) => settled(l.state) && (!l.bodyState || settled(l.bodyState))),
     scene: a && {
       sceneType: a.sceneType,
       estimatedEra: a.estimatedEra,

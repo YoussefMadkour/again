@@ -24,6 +24,7 @@ Providers for the extras are built in `lib/ai/extras.ts`. A missing key turns th
 | Object outlines | SAM 3 via fal | $0.005 each |
 | Hero objects (≤3) | SAM 3 cutout + TRELLIS via fal | ≈ $0.025 each |
 | Sound (1 ambient 15s + ≤2 positional 6s) | ElevenLabs, 40 credits/s | ≤ 1,080 credits |
+| People in 3D (≤3) | SAM 3D Body + Hunyuan3D via fal | ≈ $0.40 each (`PERSON_MODEL=off` skips) |
 
 Visitors on their own World Labs key get the world only, because the extras bill the owner's
 fal/ElevenLabs accounts. Set `EXTRAS_FOR_OWN_KEYS=true` to include them.
@@ -70,11 +71,44 @@ upload ─┬─► World Labs (world, ~5 min)
   0.25% of the frame, not "preserve" (faces, photos on the wall), at most 3.
 - In the browser, objects and positional sounds are placed by raycasting the splat from the
   calibrated original camera through their box in the photo (`lib/world/placement.ts`). The
-  splat is erased where a hero mesh stands (Spark `SplatEdit`), so it isn't doubled.
+  world model's own copy of each thing we draw ourselves (hero meshes, flat photo layers) is
+  removed, so nothing shows twice. The copy sits a few cm off ours in place and depth, so it
+  isn't found around our placement but the way the photograph saw it: every splat inside the
+  thing's box in the photo (grown 12%) and near where it stands (`Hole` in
+  `components/world/provenance.ts`, built in `lib/world/holes.ts`). Hero objects' copies are
+  erased, but only short of the room measured around them (erasing a wall opens onto
+  nothing); a photo layer's copy is repainted in the wall's own colour, sampled around it.
 - Clicking a hero object opens its evidence: the original photo, the object outlined,
   "observed here".
 - Sound is silent until STEP INSIDE (the click unlocks audio), faint while the photo is still
   up, and full once through it.
+
+### People in 3D (`lib/pipeline/person.ts`, `lib/pipeline/hybrid.ts`)
+
+Once a person's cutout is done (the flat layer is usable from then on), two models run side
+by side: SAM 3D Body ($0.02) poses a complete body from the whole photo, in its camera's
+frame; Hunyuan3D ($0.375) rebuilds their look (hair, face, clothes) from the cutout alone,
+so it stops where something hid them. The detected body is matched to the layer by box
+overlap. Hunyuan's mesh is then fitted onto it with a scale-aware ICP (Umeyama, trimmed at
+the 65th percentile so hair and clothes a bare body lacks don't dominate), from 45 starts
+(how much of the body it covers × which way it faces), the best three refined. SAM's legs
+fill in below Hunyuan's hem. One compressed GLB (~1.4 MB), fitted in ~4 s; above 5 cm of
+disagreement it's dropped and the flat layer stays. On the 1946 woman: 2.0 cm.
+
+In the room (`components/world/BodyLayer.tsx`) only the model is shown, in its own texture
+(no flat cutout beside it: a few cm apart, the two read as a double). The legs SAM adds take
+the person's skin tone, read from the model's texture where it lies on the bare body. Once
+fully in, the model is opaque and drawn before the splats, which respect depth: the room in
+front of them (a table before their legs) covers them from wherever you stand. The world's
+own figure is hidden in a capsule fitted around it and the model; its flash shadow on the
+wall is painted out (pictures near it are left alone), over a soft backing where the world
+model left the wall thin. Something the person holds (per the vision model) is held by the
+model, hand and all; its flat layer and the world's copy are dropped. Furniture-sized hero
+meshes (over 0.75 m placed) only erase the world's copy inside their own outline and above
+their middle: the world's own legs fill in around a mesh's broken openwork, and the wall
+behind a copy was never built.
+`?body=0` shows the room without the model, for comparison. Layers from before this step
+never start paid work; `scripts/extras.ts <id> --people` gives them a model.
 
 Verified live end to end on the 1946 photo: Gemini analysis → SAM 3 box → crop → fal CDN →
 SAM 3 cutout → TRELLIS → placed in the world, plus ElevenLabs sound. To (re)run it on a gallery

@@ -1,18 +1,13 @@
 "use client";
 
 import { useFrame, useThree } from "@react-three/fiber";
-import {
-  SparkRenderer,
-  SplatEdit,
-  SplatEditRgbaBlendMode,
-  SplatEditSdf,
-  SplatEditSdfType,
-  SplatMesh,
-} from "@sparkjsdev/spark";
+import { SparkRenderer, SplatMesh } from "@sparkjsdev/spark";
 import { type RefObject, useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import type { WorldFx } from "./fx";
-import { type ProvenanceUniforms, provenanceModifier } from "./provenance";
+import { type Hole, type ProvenanceUniforms, provenanceModifier, setHoles } from "./provenance";
+
+export type { Hole };
 
 interface Props {
   url: string;
@@ -27,19 +22,10 @@ interface Props {
   onError: (error: unknown) => void;
   /** The loaded base splat, for raycasting (placing objects and sounds). */
   onMesh?: (mesh: SplatMesh) => void;
-  /** Regions to erase from the splat, where a hero mesh now stands. World space. */
+  /** The world's own copies of things we draw ourselves (hero meshes, photo layers). */
   holes?: Hole[];
   /** Per-splat provenance (observed / inferred / imagined). */
   provenance?: ProvenanceUniforms;
-}
-
-export interface Hole {
-  id: string;
-  center: THREE.Vector3;
-  /** Half extents. */
-  size: THREE.Vector3;
-  /** World orientation of the ellipsoid's axes (default: axis-aligned). */
-  quaternion?: THREE.Quaternion;
 }
 
 const UPGRADE_FADE_S = 1.2;
@@ -115,20 +101,15 @@ export function GaussianEnvironment({
     };
   }, [gl, scene, url, qx, qy, qz, qw, scale, provenance]);
 
-  // Erase the splat where hero meshes stand, on every splat of this world.
+  // Remove the world's copies where hero meshes and photo layers stand (see Hole).
   const holeKey = holes.map((h) => h.id).join(",");
   // biome-ignore lint/correctness/useExhaustiveDependencies: holes are keyed by id
   useEffect(() => {
-    const meshes = [base.current, upgrade.current?.mesh].filter(Boolean) as SplatMesh[];
-    const edits = meshes.map((mesh) => {
-      const edit = eraseEdit(mesh, holes);
-      mesh.add(edit);
-      return { mesh, edit };
-    });
-    return () => {
-      for (const { mesh, edit } of edits) mesh.remove(edit);
-    };
-  }, [holeKey, upgradeReady]);
+    if (!provenance) return;
+    setHoles(provenance, holes);
+    base.current?.updateVersion();
+    upgrade.current?.mesh.updateVersion();
+  }, [holeKey, upgradeReady, provenance]);
 
   // Spark caches each splat's modified values: nudge it when the provenance uniforms move.
   const lastProvenance = useRef({ dream: -1, reveal: -1, people: -1 });
@@ -139,7 +120,16 @@ export function GaussianEnvironment({
       const last = lastProvenance.current;
       const dream = provenance.dream.value;
       const reveal = provenance.reveal.value;
-      const people = provenance.peopleStrength.value;
+      // Strength, and where the hiding volume is (it's refit when a person's model is placed).
+      const cap = provenance.peopleCapsule.value;
+      const people =
+        provenance.peopleStrength.value +
+        (cap.x * 3.1 +
+          cap.y * 5.3 +
+          cap.z * 7.7 +
+          provenance.peopleFront.value * 11.9 +
+          provenance.peopleBack.value * 2.3) *
+          10;
       if (
         Math.abs(dream - last.dream) > 1e-3 ||
         Math.abs(reveal - last.reveal) > 1e-3 ||
@@ -206,25 +196,6 @@ function createMesh(
   mesh.scale.setScalar(scale);
   mesh.opacity = 0;
   return mesh;
-}
-
-/** An edit that multiplies splat opacity by zero inside each hole (in the mesh's own space). */
-function eraseEdit(mesh: SplatMesh, holes: Hole[]) {
-  const edit = new SplatEdit({ rgbaBlendMode: SplatEditRgbaBlendMode.MULTIPLY, softEdge: 0.04 });
-  const scale = mesh.scale.x || 1;
-  mesh.updateMatrixWorld(true);
-  for (const hole of holes) {
-    const sdf = new SplatEditSdf({ type: SplatEditSdfType.ELLIPSOID, opacity: 0 });
-    sdf.position.copy(mesh.worldToLocal(hole.center.clone()));
-    sdf.scale.copy(hole.size).divideScalar(scale);
-    if (hole.quaternion) {
-      const meshWorld = mesh.getWorldQuaternion(new THREE.Quaternion());
-      sdf.quaternion.copy(meshWorld.invert().multiply(hole.quaternion));
-    }
-    edit.addSdf(sdf);
-    edit.add(sdf);
-  }
-  return edit;
 }
 
 /**

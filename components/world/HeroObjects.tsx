@@ -2,10 +2,12 @@
 
 import { Html, useGLTF } from "@react-three/drei";
 import { type ThreeEvent, useFrame, useThree } from "@react-three/fiber";
+import type { SplatMesh } from "@sparkjsdev/spark";
 import { type RefObject, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import type { BoundingBox } from "@/lib/analysis/schema";
 import type { OriginalCamera } from "@/lib/demo/memory";
+import { objectHole } from "@/lib/world/holes";
 import { fixGeneratedMaterial, roomEnvironment } from "@/lib/world/materials";
 import type { Placement } from "@/lib/world/placement";
 import type { WorldFx } from "./fx";
@@ -25,6 +27,9 @@ interface Props {
   /** Objects appear with the world, never before it. */
   fx: RefObject<WorldFx>;
   camera: OriginalCamera;
+  /** The world's splat and the photo's aspect: where the world's own copy of each object is. */
+  splat: SplatMesh | null;
+  photoAspect: number;
   onSelect: (id: string) => void;
   /** Reports the splat region each mesh now occupies, so it can be erased. */
   onHoles: (holes: Hole[]) => void;
@@ -32,11 +37,23 @@ interface Props {
   seen: ReadonlySet<string>;
 }
 
+/** Largest extent, in metres, of a hero object that isn't furniture (a lamp ~0.5; a table ~0.9). */
+const MAX_OBJECT_M = 0.75;
+
 /** A click, not the end of a drag-to-look. */
 const CLICK_PX = 6;
 const HOVER_EMISSIVE = new THREE.Color("#ffe2b8");
 
-export function HeroObjects({ objects, fx, camera, onSelect, onHoles, seen }: Props) {
+export function HeroObjects({
+  objects,
+  fx,
+  camera,
+  splat,
+  photoAspect,
+  onSelect,
+  onHoles,
+  seen,
+}: Props) {
   const [holes, setHoles] = useState<Record<string, Hole>>({});
   const report = useRef(onHoles);
   report.current = onHoles;
@@ -54,6 +71,8 @@ export function HeroObjects({ objects, fx, camera, onSelect, onHoles, seen }: Pr
             fx={fx}
             seen={seen.has(o.id)}
             camera={camera}
+            splat={splat}
+            photoAspect={photoAspect}
             onSelect={onSelect}
             onPlaced={(hole) => setHoles((h) => ({ ...h, [o.id]: hole }))}
           />
@@ -68,6 +87,8 @@ function HeroObject({
   fx,
   seen,
   camera,
+  splat,
+  photoAspect,
   onSelect,
   onPlaced,
 }: {
@@ -75,6 +96,8 @@ function HeroObject({
   fx: RefObject<WorldFx>;
   seen: boolean;
   camera: OriginalCamera;
+  splat: SplatMesh | null;
+  photoAspect: number;
   onSelect: (id: string) => void;
   onPlaced: (hole: Hole) => void;
 }) {
@@ -120,19 +143,29 @@ function HeroObject({
     return { model, materials, transform: { scale, yaw, size: size.multiplyScalar(scale) } };
   }, [scene, object, camera, env]);
 
+  // Placed, it has a real size. Furniture-sized meshes keep the world's copy of their lower
+  // half: image-to-3D breaks on openwork like a treadle base, and the world's own legs behind
+  // the mesh's shards read as the real thing.
+  const furniture = Math.max(transform.size.x, transform.size.y, transform.size.z) > MAX_OBJECT_M;
+
   const placed = useRef(onPlaced);
   placed.current = onPlaced;
   useEffect(() => {
-    // Erase the splat's own copy of the object, and nothing else: an ellipsoid hugging the mesh,
-    // shallow in depth (objects usually stand against walls) and lifted a little so the surface
-    // it rests on stays. Half extents; the mesh's own size is its full extent.
-    const { size } = transform;
-    placed.current({
-      id: object.id,
-      center: object.placement.center.clone().add(new THREE.Vector3(0, size.y * 0.06, 0)),
-      size: new THREE.Vector3(size.x * 0.52, size.y * 0.46, Math.min(size.z, size.x) * 0.38),
-    });
-  }, [object, transform]);
+    // The world's own copy of the object, wherever it strayed to (see objectHole).
+    if (!splat) return;
+    placed.current(
+      objectHole(
+        splat,
+        camera,
+        photoAspect,
+        object.id,
+        object.bbox,
+        object.placement.center.clone(),
+        transform.size,
+        furniture,
+      ),
+    );
+  }, [object, transform, splat, camera, photoAspect, furniture]);
 
   const opaque = useRef(false);
   const marker = useRef<HTMLDivElement>(null);

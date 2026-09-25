@@ -4,6 +4,7 @@ import { cropToBox } from "@/lib/pipeline/crop";
 import type { ExtrasDeps } from "@/lib/pipeline/extras";
 import { cutoutFlat, cutoutPerson } from "@/lib/pipeline/layers";
 import { optimizeRemoteGlb } from "@/lib/pipeline/optimize-glb";
+import { fitPerson } from "@/lib/pipeline/person";
 import { getStore } from "@/lib/store";
 import { LocalStorage } from "./providers/local-storage";
 import {
@@ -16,6 +17,7 @@ import { ElevenLabsAudioProvider } from "./providers/real/elevenlabs";
 import {
   FalClient,
   FalMeshProvider,
+  FalPersonProvider,
   FalSegmentProvider,
   FalStorage,
   FalVisionProvider,
@@ -50,14 +52,16 @@ export function getExtrasDeps(): ExtrasDeps {
   const elevenKey = process.env.ELEVENLABS_API_KEY;
   return {
     store,
-    vision:
-      fal && new FalVisionProvider(fal, process.env.VISION_MODEL || "google/gemini-2.5-flash"),
+    vision: visionProvider(fal),
     segment: fal && new FalSegmentProvider(fal),
     object3d: fal && new FalMeshProvider(fal, meshModel()),
     audio: elevenKey && storage ? new ElevenLabsAudioProvider(elevenKey, storage) : null,
     storage,
     judge: process.env.TYPESAFE_API_KEY ? new JevJudge(process.env.TYPESAFE_API_KEY) : null,
     crop: cropToBox,
+    // PERSON_MODEL=off skips people in 3D (~$0.40 a person).
+    person3d: fal && process.env.PERSON_MODEL !== "off" ? new FalPersonProvider(fal) : null,
+    fitPerson,
     optimizeMesh: optimizeRemoteGlb,
     findFrames: fal ? (photoUrl) => findFrames(fal, photoUrl) : undefined,
     cutout: fal

@@ -34,7 +34,9 @@ for (const o of entry.extras.objects.filter((o) => o.state === "done" && o.glbUr
 }
 const layers = [];
 for (const l of entry.extras.layers ?? []) {
-  if (l.state === "done" && l.url) layers.push({ ...l, url: await fetchTo(l.url, `${l.id}.png`) });
+  if (l.state !== "done" || !l.url) continue;
+  const body = l.body && { ...l.body, url: await fetchTo(l.body.url, `person-${l.id}.glb`) };
+  layers.push({ ...l, url: await fetchTo(l.url, `${l.id}.png`), body });
 }
 const sounds = [];
 for (const s of entry.extras.sounds.filter((s) => s.state === "done" && s.url)) {
