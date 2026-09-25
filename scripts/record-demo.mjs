@@ -1,3 +1,6 @@
+// Records the demo walkthrough (docs/DEMO_SCRIPT.md) against a running app on :3000, with a
+// timing mark at each beat (marks.json) so a voiceover can be laid on, and the two loading
+// waits marked for cutting. Usage: node scripts/record-demo.mjs <out_dir>
 import { writeFileSync } from "node:fs";
 import { chromium } from "@playwright/test";
 
