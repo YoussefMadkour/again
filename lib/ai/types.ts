@@ -11,6 +11,12 @@ export interface WorldGenerationInput {
     /** File extension without the dot: jpg, png, webp. */
     extension: string;
   };
+  /**
+   * Other photographs of the same room (up to 7), for a world that sees more of it. The
+   * main image stays the one you walk in through. Same size as it, ideally, for Marble's auto
+   * layout; `azimuth` (degrees) places a view when you know where it faces.
+   */
+  extraViews?: { bytes: Uint8Array<ArrayBuffer>; extension: string; azimuth?: number }[];
   /** Optional text guidance. Omitted, World Labs captions the image itself. */
   prompt?: string;
   /** Shown in the provider's dashboard. Never contains user data. */

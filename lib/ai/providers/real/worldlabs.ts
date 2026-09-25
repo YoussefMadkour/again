@@ -11,7 +11,11 @@ export const EXISTING_WORLD = "world_";
 
 interface World {
   world_id: string;
-  world_prompt?: null | { image_prompt?: { uri?: string | null } | null };
+  world_prompt?: null | {
+    image_prompt?: { uri?: string | null } | null;
+    /** Its views' own storage addresses (gs://…), not public links. */
+    multi_image_prompt?: { uri?: string | null }[] | null;
+  };
   assets?: {
     caption?: string;
     thumbnail_url?: string | null;
@@ -41,19 +45,37 @@ export class WorldLabsProvider implements WorldProvider {
 
   async create(input: WorldGenerationInput): Promise<GenerationJob> {
     const mediaAssetId = await this.upload(input.image.bytes, input.image.extension);
+    const text = input.prompt ? { text_prompt: input.prompt } : {};
+    const views = input.extraViews ?? [];
+    const world_prompt =
+      views.length === 0
+        ? {
+            type: "image",
+            image_prompt: { source: "media_asset", media_asset_id: mediaAssetId },
+            // A memory is a single photograph, never a panorama.
+            is_pano: false,
+            ...text,
+          }
+        : {
+            // Several views of one room: the main photograph first.
+            type: "multi-image",
+            multi_image_prompt: [
+              { content: { source: "media_asset", media_asset_id: mediaAssetId } },
+              ...(await Promise.all(
+                views.map(async (v) => ({
+                  ...(v.azimuth === undefined ? {} : { azimuth: v.azimuth }),
+                  content: {
+                    source: "media_asset",
+                    media_asset_id: await this.upload(v.bytes, v.extension),
+                  },
+                })),
+              )),
+            ],
+            ...text,
+          };
     const op = await this.request<Operation>("/worlds:generate", {
       method: "POST",
-      body: JSON.stringify({
-        display_name: input.displayName,
-        model: this.model,
-        world_prompt: {
-          type: "image",
-          image_prompt: { source: "media_asset", media_asset_id: mediaAssetId },
-          // A memory is a single photograph, never a panorama.
-          is_pano: false,
-          ...(input.prompt ? { text_prompt: input.prompt } : {}),
-        },
-      }),
+      body: JSON.stringify({ display_name: input.displayName, model: this.model, world_prompt }),
     });
     return { jobId: op.operation_id };
   }
@@ -145,6 +167,7 @@ function toResult(world: World): WorldResult {
     metricScale: world.assets?.splats?.semantics_metadata?.metric_scale_factor ?? 1,
     panoUrl: world.assets?.imagery?.pano_url ?? undefined,
     thumbnailUrl: world.assets?.thumbnail_url ?? undefined,
+    // A multi-image world's photos aren't public: whoever made it hosts the main one.
     sourcePhotoUrl: world.world_prompt?.image_prompt?.uri ?? undefined,
     metadata: {
       provider: "worldlabs",
