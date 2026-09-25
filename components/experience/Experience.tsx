@@ -2,7 +2,6 @@
 
 import { AnimatePresence, motion } from "framer-motion";
 import dynamic from "next/dynamic";
-import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import { unlockAudio } from "@/components/world/SpatialAudio";
 import { DEMO_EXTRAS } from "@/lib/demo/extras";
@@ -63,8 +62,14 @@ interface Props {
   exploreOnly?: boolean;
 }
 
-export function Experience({ gallery, access, exploreOnly = false }: Props) {
-  const router = useRouter();
+export function Experience({ gallery: initialGallery, access, exploreOnly = false }: Props) {
+  // Memories shared since the page loaded (maybe the one just made) join when you come home.
+  const [gallery, setGallery] = useState(initialGallery);
+  // Read after mount (the server doesn't know the query), so the first render matches.
+  const [uploadable, setUploadable] = useState(false);
+  useEffect(() => {
+    setUploadable(!exploreOnly && new URLSearchParams(window.location.search).has("upload"));
+  }, [exploreOnly]);
   const [state, dispatch] = useReducer(reducer, "idle");
   const [photo, setPhoto] = useState<Photo | null>(null);
   const [memory, setMemory] = useState<Memory | null>(null);
@@ -281,8 +286,11 @@ export function Experience({ gallery, access, exploreOnly = false }: Props) {
     card.current = null;
     dispatch({ type: "RESET" });
     // Pick up memories shared since the page loaded (including, maybe, this one).
-    router.refresh();
-  }, [photo, router]);
+    void fetch("/api/gallery", { cache: "no-store" })
+      .then((r) => (r.ok ? (r.json() as Promise<{ cards: GalleryCard[] }>) : null))
+      .then((data) => data && setGallery(data.cards))
+      .catch(() => {});
+  }, [photo]);
 
   // Photo layers (people, portraits) must be there the moment you step inside, so fetch them
   // while the photograph is still on screen rather than when the world asks.
@@ -427,10 +435,11 @@ export function Experience({ gallery, access, exploreOnly = false }: Props) {
                     })),
                 ]}
               />
-              {!exploreOnly && (
+              {/* Walking into memories only; your own photo is at /?upload=1 (never in a showcase). */}
+              {(uploadable || notice) && (
                 <div className="absolute bottom-[8vh] flex flex-col items-center gap-4">
                   {notice && <p className={`${LABEL} text-bone/70`}>{notice}</p>}
-                  <BringPhoto onPhoto={choose} onProblem={setNotice} />
+                  {uploadable && <BringPhoto onPhoto={choose} onProblem={setNotice} />}
                 </div>
               )}
             </section>

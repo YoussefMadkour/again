@@ -18,7 +18,7 @@ test("an access code unlocks a memory, which can be shared to the gallery", asyn
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(String(e)));
 
-  await page.goto("/");
+  await page.goto("/?upload=1");
   await expect(page.getByTestId("gallery-card")).toHaveCount(0);
   await drop(page);
 
@@ -58,7 +58,7 @@ test("an access code unlocks a memory, which can be shared to the gallery", asyn
 });
 
 test("a trial code works once, then asks for another way in", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/?upload=1");
   await drop(page);
   await enterCode(page, "trial-once");
   await expect(page.locator("main")).toHaveAttribute("data-state", "generating");
@@ -76,13 +76,13 @@ test("a trial code works once, then asks for another way in", async ({ page }) =
 });
 
 test("unshared memories stay out of the gallery", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/?upload=1");
   // Only the memory shared in the first test.
   await expect(page.getByTestId("gallery-card")).toHaveCount(1);
 });
 
 test("rejects files that aren't photos", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/?upload=1");
   await page.getByLabel("Choose a photograph").setInputFiles({
     name: "notes.txt",
     mimeType: "text/plain",
