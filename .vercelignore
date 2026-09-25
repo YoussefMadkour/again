@@ -1,0 +1,10 @@
+# Never upload local data, keys or build output with a CLI deploy.
+.data
+.env*
+!.env.example
+.next
+.next-*
+test-results
+playwright-report
+.agents
+.claude
