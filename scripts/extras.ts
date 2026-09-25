@@ -4,6 +4,10 @@
 //   tsx --env-file=.env.local scripts/extras.ts <gallery_id> [--layers] [--people]
 // --people gives people layers made before person models their 3D model (or retries one).
 // --refit rebuilds finished person models from their paid-for results (free).
+// --remesh remakes the hero objects with the current MESH_MODEL (default Hunyuan3D, $0.375
+// each): furniture is dropped (it stays the world's), at most 6.
+// --all-objects re-reads the photo for every object in the room and makes a 3D model of each
+// (~$0.025 each; walls, windows, curtains and rugs stay part of the world).
 
 import { LocalStorage } from "../lib/ai/providers/local-storage";
 import { ElevenLabsAudioProvider } from "../lib/ai/providers/real/elevenlabs";
@@ -54,7 +58,7 @@ const deps = {
   segment: new FalSegmentProvider(fal),
   object3d: new FalMeshProvider(
     fal,
-    isMeshModel(process.env.MESH_MODEL) ? process.env.MESH_MODEL : "trellis",
+    isMeshModel(process.env.MESH_MODEL) ? process.env.MESH_MODEL : "hunyuan3d-v3",
   ),
   audio: ELEVENLABS_API_KEY ? new ElevenLabsAudioProvider(ELEVENLABS_API_KEY, storage) : null,
   storage,
@@ -94,6 +98,76 @@ if (!existing) {
         Object.assign(l, { bodyState: "pending", bodyError: undefined, bodyHandle: undefined });
       }
     }
+  }
+  if (process.argv.includes("--all-objects")) {
+    if (!GEMINI_API_KEY) throw new Error("--all-objects needs GEMINI_API_KEY");
+    const thorough = new GeminiVisionProvider(
+      GEMINI_API_KEY,
+      process.env.GEMINI_MODEL || "gemini-flash-latest",
+      true,
+    );
+    const analysis = await thorough.analyze(entry.photoUrl);
+    const done = new Map((existing.objects ?? []).map((o) => [o.id, o]));
+    const structural =
+      /\b(wall|window|floor|ceiling|door|curtain|drape|rug|carpet|arch|column|molding|moulding|panel)/i;
+    const planned = analysis.objects.filter(
+      (o) =>
+        o.bbox &&
+        o.provenance === "observed" &&
+        o.recommendedRepresentation !== "preserve" &&
+        !structural.test(`${o.id} ${o.label}`),
+    );
+    // Keep what's already made (the same object, found again, has the same id or overlaps it).
+    const overlaps = (a: readonly number[], b: readonly number[]) => {
+      const ix = Math.max(0, Math.min(a[2], b[2]) - Math.max(a[0], b[0]));
+      const iy = Math.max(0, Math.min(a[3], b[3]) - Math.max(a[1], b[1]));
+      const smaller = Math.min((a[2] - a[0]) * (a[3] - a[1]), (b[2] - b[0]) * (b[3] - b[1]));
+      return smaller > 0 && (ix * iy) / smaller > 0.6;
+    };
+    const kept = [...done.values()].filter((o) => o.state === "done");
+    const fresh = planned.filter(
+      (o) => !done.has(o.id) && !kept.some((k) => o.bbox && overlaps(k.bbox, o.bbox)),
+    );
+    existing.objects = [
+      ...kept,
+      ...fresh.map((o) => ({
+        id: o.id,
+        label: o.label,
+        description: o.description,
+        bbox: o.bbox as [number, number, number, number],
+        state: "pending" as const,
+      })),
+    ];
+    // The new objects join the analysis, for their evidence panels.
+    existing.analysis = {
+      state: "done",
+      result: {
+        ...analysis,
+        objects: [
+          ...(existing.analysis.result?.objects ?? []),
+          ...analysis.objects.filter((o) => fresh.some((f) => f.id === o.id)),
+        ],
+      },
+    };
+    console.log("making", fresh.map((o) => o.id).join(", "));
+  }
+  if (process.argv.includes("--remesh")) {
+    // Furniture stays the world's (single-view image-to-3D can't rebuild a chair's back or
+    // what another chair hides); at most 6 objects.
+    const furniture =
+      /\b(chair|armchair|sofa|couch|settee|table|cabinet|bed|desk|dresser|bench|stool|wardrobe)/i;
+    existing.objects = (existing.objects ?? [])
+      .filter((o) => !furniture.test(`${o.id.replace(/-/g, " ")} ${o.label}`))
+      .slice(0, 6);
+    for (const o of existing.objects) {
+      Object.assign(o, {
+        state: "pending",
+        error: undefined,
+        meshHandle: undefined,
+        glbUrl: undefined,
+      });
+    }
+    console.log("remaking", existing.objects.map((o) => o.id).join(", "));
   }
   if (process.argv.includes("--refit")) {
     for (const l of existing.layers ?? []) {

@@ -14,10 +14,16 @@ const GEMINI_BOXES = `
 
 Boxes: instead of "bbox", give each object and each person a "box_2d": [ymin, xmin, ymax, xmax], integers 0-1000 relative to the image (0,0 top-left).`;
 
+const THOROUGH = `
+
+This time, list every distinct physical object in the room that stands on its own or sits on something (furniture, statues, lamps, candelabras, vases, flowers, sconces, clocks, side tables, anything on a table or shelf), up to 30, each with its own box. Not the room itself: walls, floor, ceiling, windows, doors, curtains, rugs.`;
+
 export class GeminiVisionProvider implements VisionProvider {
   constructor(
     private readonly apiKey: string,
     private readonly model: string,
+    /** Every distinct object in the room, not just the ones that matter most. */
+    private readonly thorough = false,
   ) {}
 
   async analyze(photoUrl: string): Promise<MemoryAnalysis> {
@@ -32,7 +38,7 @@ export class GeminiVisionProvider implements VisionProvider {
             role: "user",
             parts: [
               { inline_data: { mime_type: sniffType(bytes), data: bytes.toString("base64") } },
-              { text: VISION_USER_PROMPT + GEMINI_BOXES },
+              { text: VISION_USER_PROMPT + GEMINI_BOXES + (this.thorough ? THOROUGH : "") },
             ],
           },
         ],

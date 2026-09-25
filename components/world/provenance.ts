@@ -208,7 +208,9 @@ export function provenanceModifier(u: ProvenanceUniforms): GsplatModifier {
             for (int i = 0; i < ${MAX_HOLES}; i++) {
               if (float(i) >= ${inputs.holeCount}) break;
               vec4 box = texelFetch(${inputs.holes}, ivec2(0, i), 0);
-              if (texelFetch(${inputs.holes}, ivec2(3, i), 0).a > 2.5
+              // Keep regions, and hero objects' boxes: a shadow repaint leaves those alone.
+              float kind = texelFetch(${inputs.holes}, ivec2(3, i), 0).a;
+              if ((kind > 2.5 || kind < 0.5)
                   && photo.x > box.x && photo.x < box.z && photo.y > box.y && photo.y < box.w) keep = true;
             }
             for (int i = 0; i < ${MAX_HOLES}; i++) {
@@ -223,8 +225,13 @@ export function provenanceModifier(u: ProvenanceUniforms): GsplatModifier {
                 // A keep region: nothing to do here.
               } else if (color.a > 1.5) {
                 if (keep) continue;
-                float shade = dot(color.rgb - rgba.rgb, vec3(0.299, 0.587, 0.114));
-                if (abs(dot(d, n.xyz)) < c.w && shade > 0.04) rgba.rgb = color.rgb;
+                // Anything near the wall's own tone is the imprint (darker, and its lighter rim):
+                // repainted, feathered toward the box's edges so there's no seam.
+                float off = abs(dot(color.rgb - rgba.rgb, vec3(0.299, 0.587, 0.114)));
+                float inside = min(min(photo.x - box.x, box.z - photo.x), min(photo.y - box.y, box.w - photo.y));
+                if (abs(dot(d, n.xyz)) < c.w && off < 0.25) {
+                  rgba.rgb = mix(rgba.rgb, color.rgb, smoothstep(0.0, 0.025, inside));
+                }
               } else if (color.a > 0.5) {
                 if (abs(dot(d, n.xyz)) < c.w) rgba.rgb = color.rgb;
               } else {

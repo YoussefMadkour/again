@@ -73,10 +73,13 @@ export function getExtrasDeps(): ExtrasDeps {
   };
 }
 
-/** MESH_MODEL=trellis (default, $0.02) | trellis-2 ($0.25) | hunyuan3d-v3 ($0.375). */
+/**
+ * MESH_MODEL=hunyuan3d-v3 (default, $0.375: detailed, holds up up close) | trellis ($0.02:
+ * cheap, but melts furniture and anything partly hidden) | trellis-2 ($0.25).
+ */
 function meshModel() {
   const name = process.env.MESH_MODEL;
-  return isMeshModel(name) ? name : "trellis";
+  return isMeshModel(name) ? name : "hunyuan3d-v3";
 }
 
 /**

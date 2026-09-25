@@ -10,6 +10,8 @@ export interface PlacedSound {
   url: string;
   /** Null for ambience; a world position for sounds that come from something. */
   position: THREE.Vector3 | null;
+  /** A score: under the room's own sound, and from the top rather than mid-loop. */
+  music?: boolean;
 }
 
 interface Props {
@@ -20,6 +22,7 @@ interface Props {
 
 const AMBIENT_GAIN = 0.55;
 const POSITIONAL_GAIN = 0.9;
+const MUSIC_GAIN = 0.32;
 /** Metres (roughly) at which a positional sound starts to fall off. */
 const REF_DISTANCE = 0.8;
 
@@ -68,9 +71,9 @@ export function SpatialAudio({ sounds, fx, muted }: Props) {
           if (cancelled) return;
           audio.setBuffer(buffer);
           audio.setLoop(true);
-          audio.setVolume(s.position ? POSITIONAL_GAIN : AMBIENT_GAIN);
-          // Stagger loop starts so layered loops don't pulse together.
-          audio.offset = Math.random() * buffer.duration;
+          audio.setVolume(s.music ? MUSIC_GAIN : s.position ? POSITIONAL_GAIN : AMBIENT_GAIN);
+          // Stagger loop starts so layered loops don't pulse together (music starts at the top).
+          audio.offset = s.music ? 0 : Math.random() * buffer.duration;
           audio.play();
         },
         undefined,

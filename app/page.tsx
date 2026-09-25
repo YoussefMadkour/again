@@ -16,6 +16,7 @@ export default async function Page() {
   return (
     <Experience
       gallery={gallery}
+      exploreOnly={config.exploreOnly}
       access={{
         requireCode: accessPolicyFromEnv().requireCode,
         ownerKey: config.ownerKey,

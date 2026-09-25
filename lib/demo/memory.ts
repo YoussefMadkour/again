@@ -11,6 +11,8 @@ export interface OriginalCamera {
 
 export interface Memory {
   id: string;
+  /** The gallery memory it was baked from, when it was (so it isn't listed twice). */
+  galleryId?: string;
   photoUrl: string;
   /** width / height of the photograph. */
   photoAspect: number;
@@ -52,6 +54,7 @@ export const PAINTED_MEMORY: Memory = {
  */
 export const DEMO_MEMORY: Memory = {
   id: "demo-1946",
+  galleryId: demo1946.galleryId,
   photoUrl: demo1946.photoUrl,
   photoAspect: 1815 / 1393,
   splatUrl: demo1946.splatUrl,

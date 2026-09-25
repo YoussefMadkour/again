@@ -40,7 +40,8 @@ export interface HeroObjectState {
 
 export interface SoundState {
   id: string;
-  kind: "ambient" | "positional";
+  /** Music is a quiet, non-positional score (added by hand for now: scripts/add-music.ts). */
+  kind: "ambient" | "positional" | "music";
   description: string;
   prompt: string;
   /** Positional sounds come from an object in the photo. */

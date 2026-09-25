@@ -49,6 +49,9 @@ export function wallHole(
   frame: BoundingBox,
   center: THREE.Vector3,
   normal: THREE.Vector3,
+  /** Which of the colours around to take: the median, or higher where the wall is the
+   * lightest thing near (behind a person, the ring also catches them and the curtains). */
+  quantile = 0.5,
 ): Hole {
   const box = growBox(frame);
   const ring = growBox(box as unknown as BoundingBox, 0.35, 0.01);
@@ -79,7 +82,7 @@ export function wallHole(
   });
   const median = (v: number[]) => {
     v.sort((x, y) => x - y);
-    return v[Math.floor(v.length / 2)];
+    return v[Math.floor((v.length - 1) * quantile)];
   };
   const wall =
     r.length > 12
@@ -126,6 +129,9 @@ export function objectHole(
     const inRing = u >= ring[0] && u <= ring[2] && v >= ring[1] && v <= ring[3];
     const inBox = u >= box[0] && u <= box[2] && v >= box[1] && v <= box[3];
     if (!inRing || inBox) return;
+    // At the object's own height: not the surface it stands on (a tabletop around a lamp's
+    // base would make the room look like it's right behind it).
+    if (world.y < center.y - size.y * 0.25) return;
     const range = world.distanceTo(origin) - centerDepth;
     if (range > -reach && range < reach * 3) behind.push(range);
   });
@@ -200,10 +206,19 @@ export function shadowHole(
   const center = new THREE.Vector3(median("x"), median("y"), median("z"));
   // Walls stand upright; this one faces back toward the camera.
   const normal = origin.clone().sub(center).setY(0).normalize();
-  // A flash shadow falls to one side: wide margins. Head to waist only: lower down, furniture
-  // stands against the wall (and is darker than it).
+  // A flash shadow falls to one side: wide margins. Down to the hips: lower, it's furniture
+  // against the wall (hero objects' boxes are left alone by the repaint too).
   const [bx0, by0, bx1, by1] = growBox(person, 0.3, 0.01);
-  const box = [bx0, by0, bx1, by0 + (by1 - by0) * 0.5] as const;
-  const hole = wallHole(splat, camera, aspect, id, box as unknown as BoundingBox, center, normal);
+  const box = [bx0, by0, bx1, by0 + (by1 - by0) * 0.7] as const;
+  const hole = wallHole(
+    splat,
+    camera,
+    aspect,
+    id,
+    box as unknown as BoundingBox,
+    center,
+    normal,
+    0.8,
+  );
   return hole.kind === "wall" ? { ...hole, box, thickness: 0.15, shadowOnly: true } : null;
 }

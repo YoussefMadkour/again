@@ -52,9 +52,18 @@ const fragmentShader = /* glsl */ `
   void main() {
     vec3 n = normalize(vNormal);
     vec3 base = ownColor;
-    if (hasOwn > 0.5) base *= texture2D(own, (ownTransform * vec3(vUv, 1.0)).xy).rgb;
-    // A little soft light from above, so untextured parts (the legs) read as form.
-    base *= 0.86 + 0.14 * clamp(0.5 + 0.5 * n.y, 0.0, 1.0);
+    if (hasOwn > 0.5) {
+      // The texture has its own shading (it's made from the photo): only a touch more.
+      base *= texture2D(own, (ownTransform * vec3(vUv, 1.0)).xy).rgb;
+      base *= 0.86 + 0.14 * clamp(0.5 + 0.5 * n.y, 0.0, 1.0);
+    } else {
+      // Untextured (the legs): a key light from above and the room, and a soft fill, so they
+      // read as rounded limbs rather than flat grey.
+      vec3 key = normalize(vec3(0.35, 0.8, 0.5));
+      float lambert = max(dot(n, key), 0.0);
+      float fill = 0.5 + 0.5 * n.y;
+      base *= 0.42 + 0.5 * lambert + 0.18 * fill;
+    }
     if (opacity < 0.01) discard;
     gl_FragColor = vec4(base, opacity);
     #include <colorspace_fragment>

@@ -55,3 +55,33 @@ export function PhotoDrop({ onPhoto, onProblem }: Props) {
     </motion.div>
   );
 }
+
+/** The quiet way in for your own photograph: a line under the memories (click, or drop on it). */
+export function BringPhoto({ onPhoto, onProblem }: Props) {
+  const { getRootProps, getInputProps, isDragActive } = useDropzone({
+    accept,
+    maxSize: MAX_PHOTO_BYTES,
+    multiple: false,
+    onDropAccepted: ([file]) => onPhoto(file),
+    onDropRejected: ([rejection]) =>
+      onProblem(
+        rejection
+          ? (photoProblem(rejection.file) ?? "this photo can't be used")
+          : "one photo at a time",
+      ),
+  });
+  return (
+    <div
+      {...getRootProps()}
+      className={`pointer-events-auto cursor-pointer border-b pb-1 font-mono text-[10px] lowercase tracking-[0.3em] transition-colors duration-500 focus-visible:outline-none ${
+        isDragActive
+          ? "border-bone/60 text-bone/80"
+          : "border-transparent text-bone/40 hover:text-bone/70 focus-visible:text-bone/70"
+      }`}
+      data-testid="photo-drop"
+    >
+      <input {...getInputProps()} aria-label="Choose a photograph" />
+      or bring your own photograph
+    </div>
+  );
+}

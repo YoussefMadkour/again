@@ -14,6 +14,11 @@ export interface GalleryEntry {
   photoUrl: string;
   /** A render of the generated world, shown on hover. */
   thumbnailUrl?: string;
+  /**
+   * The photograph as it really was, when the world was made from a restored version of it
+   * (a black-and-white original, colourised in place): the home carousel shows both.
+   */
+  originalPhotoUrl?: string;
   world: WorldResult;
   /** The generation job, so objects and sounds can be attached when they finish. */
   jobId?: string;
@@ -24,7 +29,10 @@ export interface GalleryEntry {
 }
 
 /** What the homepage needs; the world assets are fetched only when an entry is opened. */
-export type GalleryCard = Pick<GalleryEntry, "id" | "photoUrl" | "thumbnailUrl">;
+export type GalleryCard = Pick<
+  GalleryEntry,
+  "id" | "photoUrl" | "thumbnailUrl" | "originalPhotoUrl"
+>;
 
 const KEY = "gallery";
 const MAX_ENTRIES = 60;
@@ -36,10 +44,12 @@ export async function listGallery(store: Store): Promise<GalleryEntry[]> {
 export async function galleryCards(store: Store): Promise<GalleryCard[]> {
   return (await listGallery(store))
     .filter((e) => !e.held)
-    .map(({ id, photoUrl, thumbnailUrl }) => ({
+    .map(({ id, photoUrl, thumbnailUrl, originalPhotoUrl }) => ({
       id,
       photoUrl,
       thumbnailUrl,
+      // Only restored memories carry it.
+      ...(originalPhotoUrl ? { originalPhotoUrl } : {}),
     }));
 }
 
@@ -105,3 +115,13 @@ export interface JobRecord {
 }
 
 export const jobKey = (jobId: string) => `job:${jobId}`;
+
+/** Records the real photograph behind a restored one (see originalPhotoUrl). */
+export async function setOriginalPhoto(store: Store, id: string, url: string) {
+  const entries = await listGallery(store);
+  const entry = entries.find((e) => e.id === id);
+  if (!entry) return false;
+  entry.originalPhotoUrl = url;
+  await store.set(KEY, entries);
+  return true;
+}

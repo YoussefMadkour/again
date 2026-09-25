@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-test("demo memory → step inside → world → look and move → return", async ({ page }) => {
+test("clicking the memory walks straight in → world → look and move → return", async ({ page }) => {
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(String(e)));
 
@@ -9,11 +9,11 @@ test("demo memory → step inside → world → look and move → return", async
   await page.getByRole("button", { name: /enter a memory/i }).click();
   await expect(page.getByAltText(/photograph this memory/i)).toBeVisible();
 
-  const step = page.getByRole("button", { name: /step inside/i });
-  await expect(step).toBeVisible({ timeout: 90_000 });
-  await step.click();
-
-  await expect(page.locator("main")).toHaveAttribute("data-state", "entering");
+  // No "step inside" stop: once the world has loaded, through the photograph.
+  await expect(page.locator("main")).toHaveAttribute("data-state", "entering", {
+    timeout: 90_000,
+  });
+  await expect(page.getByRole("button", { name: /step inside/i })).toHaveCount(0);
   await expect(page.locator("main")).toHaveAttribute("data-state", "exploring", {
     timeout: 10_000,
   });
@@ -48,11 +48,8 @@ test("demo memory → step inside → world → look and move → return", async
 test("a hero object shows where it came from in the photograph", async ({ page }) => {
   await page.goto("/");
   await page.getByRole("button", { name: /enter a memory/i }).click();
-  const step = page.getByRole("button", { name: /^step inside$/i });
-  await expect(step).toBeVisible({ timeout: 90_000 });
-  await step.click();
   await expect(page.locator("main")).toHaveAttribute("data-state", "exploring", {
-    timeout: 10_000,
+    timeout: 90_000,
   });
   await expect(page.getByText(/click what glows/)).toBeVisible();
   await expect(page.getByRole("button", { name: "sound on" })).toBeVisible();
@@ -85,11 +82,8 @@ test("memory ↔ dream, what the photo saw, and leaving the photographed memory"
 }) => {
   await page.goto("/");
   await page.getByRole("button", { name: /enter a memory/i }).click();
-  const step = page.getByRole("button", { name: /^step inside$/i });
-  await expect(step).toBeVisible({ timeout: 90_000 });
-  await step.click();
   await expect(page.locator("main")).toHaveAttribute("data-state", "exploring", {
-    timeout: 10_000,
+    timeout: 90_000,
   });
 
   const slider = page.getByLabel("Memory to dream");

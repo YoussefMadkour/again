@@ -29,6 +29,7 @@ interface Props {
 }
 
 const UPGRADE_FADE_S = 1.2;
+const DISPOSE_DELAY_MS = 1500;
 
 /**
  * Spark objects are created imperatively and added to the R3F scene. Spark's
@@ -88,16 +89,18 @@ export function GaussianEnvironment({
     return () => {
       disposed = true;
       base.current = null;
-      scene.remove(mesh);
-      mesh.dispose();
       const up = upgrade.current;
-      if (up) {
-        scene.remove(up.mesh);
-        up.mesh.dispose();
-        upgrade.current = null;
-      }
+      upgrade.current = null;
+      scene.remove(mesh);
+      if (up) scene.remove(up.mesh);
       scene.remove(spark);
-      spark.dispose?.();
+      // Out of the scene now, disposed in a moment: Spark sorts splats with asynchronous GPU
+      // readbacks, and one still in flight throws ("No target") if its buffers are gone.
+      setTimeout(() => {
+        mesh.dispose();
+        up?.mesh.dispose();
+        spark.dispose?.();
+      }, DISPOSE_DELAY_MS);
     };
   }, [gl, scene, url, qx, qy, qz, qw, scale, provenance]);
 

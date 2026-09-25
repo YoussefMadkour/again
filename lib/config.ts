@@ -48,5 +48,11 @@ export function publicConfig() {
     mode: config.AI_MODE,
     ownerKey: config.AI_MODE === "mock" || Boolean(config.WORLDLABS_API_KEY),
     contactUrl: process.env.NEXT_PUBLIC_CONTACT_URL || null,
+    exploreOnly: exploreOnly(),
   };
+}
+
+/** EXPLORE_ONLY=true: a showcase (an event, a booth). Memories can be walked into, not made. */
+export function exploreOnly() {
+  return process.env.EXPLORE_ONLY === "true";
 }

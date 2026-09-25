@@ -43,6 +43,9 @@ interface Props {
   seenObjects: ReadonlySet<string>;
   /** The photo's own pixels on the walls (portraits, frames); off shows the world's own. */
   photoLayers?: boolean;
+  /** Only what the world model made: none of our objects, photo layers or people, none of
+   * our fixes to its world. For comparing. */
+  marbleOnly?: boolean;
 }
 
 export default function MemoryWorld({
@@ -62,6 +65,7 @@ export default function MemoryWorld({
   onBeyond,
   seenObjects,
   photoLayers = true,
+  marbleOnly = false,
 }: Props) {
   const fx = useRef(createWorldFx());
   const capture = mode === "capture";
@@ -73,12 +77,15 @@ export default function MemoryWorld({
     [extras],
   );
   const holes = useMemo(
-    () => [
-      ...objectHoles,
-      // Without the photo layers, the world's own copies of them stay.
-      ...(photoLayers ? layerHoles : layerHoles.filter((h) => !flatIds.has(h.id))),
-    ],
-    [objectHoles, layerHoles, photoLayers, flatIds],
+    () =>
+      marbleOnly
+        ? []
+        : [
+            ...objectHoles,
+            // Without the photo layers, the world's own copies of them stay.
+            ...(photoLayers ? layerHoles : layerHoles.filter((h) => !flatIds.has(h.id))),
+          ],
+    [objectHoles, layerHoles, photoLayers, flatIds, marbleOnly],
   );
   const dreamRef = useRef(dream);
   dreamRef.current = dream;
@@ -138,6 +145,7 @@ export default function MemoryWorld({
     if (!extras) return [];
     return extras.sounds.flatMap((s): PlacedSound[] => {
       if (s.state !== "done" || !s.url) return [];
+      if (s.kind === "music") return [{ id: s.id, url: s.url, position: null, music: true }];
       if (s.kind === "ambient" || !s.bbox) return [{ id: s.id, url: s.url, position: null }];
       const placement = place(s.id, s.bbox);
       return placement ? [{ id: s.id, url: s.url, position: placement.center }] : [];
@@ -180,7 +188,7 @@ export default function MemoryWorld({
           </Suspense>
           <ambientLight intensity={0.9} />
           <directionalLight position={[1.5, 3, 2]} intensity={1.4} />
-          {splat && layers.length > 0 && (
+          {splat && layers.length > 0 && !marbleOnly && (
             <PhotoLayers
               layers={layers}
               splat={splat}
@@ -194,7 +202,7 @@ export default function MemoryWorld({
             />
           )}
           <HeroObjects
-            objects={objects}
+            objects={marbleOnly ? [] : objects}
             fx={fx}
             camera={memory.originalCamera}
             splat={splat}

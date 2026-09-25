@@ -3,6 +3,7 @@ import { accessPolicyFromEnv, authorizeGeneration, clientIp } from "@/lib/access
 import { getWorldProvider } from "@/lib/ai";
 import { extrasAllowed, getExtrasDeps, getFileStorage } from "@/lib/ai/extras";
 import { WorldLabsError } from "@/lib/ai/providers/real/worldlabs";
+import { exploreOnly } from "@/lib/config";
 import { type JobRecord, jobKey } from "@/lib/gallery";
 import { randomId } from "@/lib/id";
 import { advanceExtras, startExtras } from "@/lib/pipeline/extras";
@@ -16,6 +17,9 @@ export const runtime = "nodejs";
  * Form fields: photo, and either code (owner's key) or apiKey (the visitor's own). Optional share=1.
  */
 export async function POST(req: Request) {
+  if (exploreOnly()) {
+    return NextResponse.json({ error: "new memories can't be made here" }, { status: 403 });
+  }
   const form = await req.formData().catch(() => null);
   const photo = form?.get("photo");
   if (!(photo instanceof File)) {

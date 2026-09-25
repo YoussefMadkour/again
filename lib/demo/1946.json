@@ -1,4 +1,5 @@
 {
+  "galleryId": "6da4bf4ee49a5e63",
   "photoUrl": "/demo/1946/photo.jpg",
   "splatUrl": "/demo/1946/world-500k.spz",
   "splatUpgradeUrl": "https://cdn.marble.worldlabs.ai/6f83b783-378d-4712-be66-9941823b7f72/cf5ab745-4c65-4213-a0b6-8ef2c5570084_ceramic.spz",
@@ -156,6 +157,13 @@
         "objectId": "sewing-machine-table",
         "bbox": [0.142, 0.611, 0.303, 0.878],
         "url": "/demo/1946/positional-sound-60915098.mp3",
+        "state": "done"
+      },
+      {
+        "id": "music",
+        "kind": "music",
+        "description": "A 1940s instrumental ballad from a radio in the next room (ElevenLabs Music)",
+        "url": "/demo/1946/music-radio.mp3",
         "state": "done"
       }
     ]

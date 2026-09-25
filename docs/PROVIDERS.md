@@ -8,7 +8,7 @@ implementation chosen by `AI_MODE` in `lib/ai/index.ts`. Provider calls are serv
 | `WorldProvider` | `providers/mock/world.ts`: demo splat after 9s | `providers/real/worldlabs.ts`: World Labs Marble | ✅ Milestone 2 |
 | `VisionProvider` | demo manifest | `GeminiVisionProvider` (Google AI Studio, photo inline, native box format); `FalVisionProvider` (Gemini via fal/OpenRouter) as fallback | ✅ M3 |
 | `SegmentProvider` | returns the hint | `FalSegmentProvider`: SAM 3, text prompt + nearest box | ✅ M3 |
-| `Object3DProvider` | demo `.glb` after 6s | `FalMeshProvider`: SAM 3 cutout → TRELLIS (default), TRELLIS 2 or Hunyuan3D v3 (`MESH_MODEL`) | ✅ M3 |
+| `Object3DProvider` | demo `.glb` after 6s | `FalMeshProvider`: SAM 3 cutout → Hunyuan3D v3 (default), TRELLIS or TRELLIS 2 (`MESH_MODEL`) | ✅ M3 |
 | `AudioProvider` | demo `.mp3`s | `ElevenLabsAudioProvider`: sound effects v2, seamless loops | ✅ M3 |
 | `FileStorage` | none | `FalStorage` (fal CDN), or `LocalStorage` with `STORAGE=local` | ✅ M3 |
 
@@ -22,7 +22,7 @@ Providers for the extras are built in `lib/ai/extras.ts`. A missing key turns th
 | World | World Labs `marble-1.1` | 1,580 credits ≈ $1.26 |
 | Scene analysis | Gemini Flash (Google AI Studio) | < $0.01 |
 | Object outlines | SAM 3 via fal | $0.005 each |
-| Hero objects (≤3) | SAM 3 cutout + TRELLIS via fal | ≈ $0.025 each |
+| Hero objects (≤3) | SAM 3 cutout + Hunyuan3D v3 via fal | ≈ $0.38 each (TRELLIS: $0.025) |
 | Sound (1 ambient 15s + ≤2 positional 6s) | ElevenLabs, 40 credits/s | ≤ 1,080 credits |
 | People in 3D (≤3) | SAM 3D Body + Hunyuan3D via fal | ≈ $0.40 each (`PERSON_MODEL=off` skips) |
 
@@ -120,9 +120,9 @@ Compared on real crops (`scripts/compare-meshes.ts`, `/dev/mesh?files=...` to pr
 
 | Model | Price | Time | Size | Verdict |
 |---|---|---|---|---|
-| `trellis` (fal-ai/trellis) | **$0.02** | 25-50s | ~1.3 MB | **Default.** Good once given a clean cutout and the material fix below |
+| `trellis` (fal-ai/trellis) | **$0.02** | 25-50s | ~1.3 MB | Fine for small things seen whole; melts furniture and anything partly hidden (the Villa Ephrussi armchairs) |
 | `trellis-2` | $0.25 (512p) | ~90s | ~3 MB | Cleaner textures; the upgrade if quality matters more than cost |
-| `hunyuan3d-v3` | $0.375 | ~145s | ~33 MB raw, ~1.2 MB compressed | Best geometry; practical once compressed |
+| `hunyuan3d-v3` | $0.375 | ~145s | ~33 MB raw, ~1.2 MB compressed | **Default.** Best geometry; practical once compressed |
 
 Every finished mesh is then compressed (`lib/pipeline/optimize-glb.ts`: WebP textures at
 1024px + meshopt): Hunyuan3D 32.6 → 1.2 MB, TRELLIS 1.5 → 0.15 MB, visually identical. That

@@ -185,7 +185,8 @@ export function PhotoLayers({
   // The room's depth from the original camera, without the person: what stands in front of them.
   const [backdrop, setBackdrop] = useState<Backdrop | null>(null);
   // Where things the person holds are, in the photo: the model's copies of them are clipped.
-  const [held, setHeld] = useState<ReadonlySet<string>>(new Set());
+  // Held layers, by id: the depth (along the original camera) of the hand holding them.
+  const [held, setHeld] = useState<ReadonlyMap<string, number>>(new Map());
 
   return (
     <>
@@ -232,7 +233,21 @@ export function PhotoLayers({
                 HELD.test(`${l.id.replace(/-/g, " ")} ${l.label ?? ""}`) &&
                 silhouetteCover(mask.silhouette, l.frame ?? l.bbox) > 0.02,
             );
-            setHeld(new Set(heldLayers.map((l) => l.id)));
+            // In her hands: at the depth of her model's own hands and what they hold (its
+            // surface where it overlaps the thing in the photo), else the nearest of her.
+            setHeld(
+              new Map(
+                heldLayers.map((l) => [
+                  l.id,
+                  depthWithin(
+                    points,
+                    camera,
+                    photoAspect,
+                    growBox(l.frame ?? l.bbox, 0.15, 0.01),
+                  ) ?? front + 0.03,
+                ]),
+              ),
+            );
             const holding = heldLayers.map((l) => growBox(l.frame ?? l.bbox, 0.04, 0.003));
             // And the world's copy of it, in her hand (the layer's own hole is on the wall).
             const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(
@@ -290,14 +305,15 @@ export function PhotoLayers({
                   center: shadow.center,
                   normal: shadow.normal,
                   color: shadow.color,
-                  // Head to waist: lower down, furniture can stand behind the wall's plane.
-                  box: upperHalf(growBox(layer.frame ?? layer.bbox, 0.15, 0.005)),
+                  // Head to hips: lower down, furniture can stand behind the wall's plane.
+                  box: headToHips(growBox(layer.frame ?? layer.bbox, 0.15, 0.005)),
                 });
               }
             }
           }}
           onStrength={(s) => personStrength.current.set(layer.id, s)}
-          hidden={(!showFlat && layer.kind === "flat") || held.has(layer.id)}
+          hidden={!showFlat && layer.kind === "flat"}
+          heldAt={held.get(layer.id)}
         />
       ))}
     </>
@@ -321,8 +337,8 @@ function silhouetteCover(silhouette: HTMLCanvasElement, [x0, y0, x1, y1]: readon
 
 const HELD = /\b(held|holding|in (her|his|their) hands?)\b/i;
 
-const upperHalf = ([x0, y0, x1, y1]: readonly number[]) =>
-  [x0, y0, x1, y0 + (y1 - y0) * 0.5] as const;
+const headToHips = ([x0, y0, x1, y1]: readonly number[]) =>
+  [x0, y0, x1, y0 + (y1 - y0) * 0.7] as const;
 
 interface Backdrop {
   center: THREE.Vector3;
@@ -417,6 +433,35 @@ function WallBackdrop({
   );
 }
 
+/** Median depth (along the original camera) of the model's points seen inside a photo box. */
+function depthWithin(
+  points: Float32Array,
+  camera: OriginalCamera,
+  aspect: number,
+  [x0, y0, x1, y1]: readonly number[],
+): number | null {
+  const toCamera = new THREE.Quaternion()
+    .setFromEuler(new THREE.Euler(...camera.rotation, "YXZ"))
+    .invert();
+  const origin = new THREE.Vector3(...camera.position);
+  const t = Math.tan((camera.fov * Math.PI) / 360);
+  const c = new THREE.Vector3();
+  const depths: number[] = [];
+  for (let i = 0; i < points.length; i += 3) {
+    c.set(points[i], points[i + 1], points[i + 2])
+      .sub(origin)
+      .applyQuaternion(toCamera);
+    const d = -c.z;
+    if (d <= 0.05) continue;
+    const u = (c.x / d / (t * aspect) + 1) / 2;
+    const v = (1 - c.y / d / t) / 2;
+    if (u >= x0 && u <= x1 && v >= y0 && v <= y1) depths.push(d);
+  }
+  if (depths.length < 12) return null;
+  depths.sort((a, b) => a - b);
+  return depths[Math.floor(depths.length / 2)];
+}
+
 /** The model's depth range along the original camera (2nd..98th percentile), with margins. */
 function depthRange(points: Float32Array, camera: OriginalCamera): [number, number] {
   const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(
@@ -468,6 +513,7 @@ function PhotoLayer({
   onModel,
   onStrength,
   hidden,
+  heldAt,
 }: {
   layer: PhotoLayerInput;
   splat: SplatMesh;
@@ -482,10 +528,28 @@ function PhotoLayer({
   onModel: (points: Float32Array) => void;
   /** Not drawn (photo layers off, or something the person's model holds itself). */
   hidden: boolean;
+  /** Something a person holds: in their hand at this depth, not on the wall. */
+  heldAt?: number;
   onStrength: (strength: number) => void;
 }) {
   const mesh = useRef<THREE.Mesh>(null);
   const [quad, setQuad] = useState<LayerQuad | null>(null);
+  // Held: the same photo box, on a plane facing the original camera at the hand's depth (it
+  // lands on the photo from the viewpoint, and on the model's hands).
+  useEffect(() => {
+    if (heldAt === undefined) return;
+    const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(
+      new THREE.Quaternion().setFromEuler(new THREE.Euler(...camera.rotation, "YXZ")),
+    );
+    const [x0, y0, x1, y1] = layer.bbox;
+    const at = (u: number, v: number) => {
+      const ray = rayThroughPhoto(camera, photoAspect, u, v);
+      return ray.at(heldAt / ray.direction.dot(forward), new THREE.Vector3());
+    };
+    const corners: LayerQuad["corners"] = [at(x0, y0), at(x1, y0), at(x1, y1), at(x0, y1)];
+    const center = corners.reduce((sum, c) => sum.add(c), new THREE.Vector3()).multiplyScalar(0.25);
+    setQuad({ corners, center, normal: forward.clone().negate() });
+  }, [heldAt, layer.bbox, camera, photoAspect]);
   const holeRef = useRef(onHole);
   holeRef.current = onHole;
   const personRef = useRef(onPerson);

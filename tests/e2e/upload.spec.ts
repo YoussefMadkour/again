@@ -50,7 +50,8 @@ test("an access code unlocks a memory, which can be shared to the gallery", asyn
   await expect(page.getByTestId("gallery-card")).toHaveCount(1, { timeout: 10_000 });
   await page.getByTestId("gallery-card").click();
   await expect(page).toHaveURL(/\?memory=[0-9a-f]{16}/);
-  await expect(page.getByRole("button", { name: /step inside/i })).toBeVisible({
+  // Clicked: straight through the photograph, no "step inside".
+  await expect(page.locator("main")).toHaveAttribute("data-state", "exploring", {
     timeout: 90_000,
   });
   expect(errors).toEqual([]);

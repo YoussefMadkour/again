@@ -40,10 +40,16 @@ for (const l of entry.extras.layers ?? []) {
 }
 const sounds = [];
 for (const s of entry.extras.sounds.filter((s) => s.state === "done" && s.url)) {
-  sounds.push({ ...s, url: await fetchTo(s.url as string, `${s.kind}-${s.id}.mp3`) });
+  // Already part of the demo (music added with scripts/add-music.ts): kept as is.
+  const url = s.url as string;
+  sounds.push({
+    ...s,
+    url: url.startsWith(`/demo/${name}/`) ? url : await fetchTo(url, `${s.kind}-${s.id}.mp3`),
+  });
 }
 
 const baked = {
+  galleryId: id,
   photoUrl: photo,
   splatUrl: splat,
   splatUpgradeUrl: entry.world.splatUrlHighRes ?? null,

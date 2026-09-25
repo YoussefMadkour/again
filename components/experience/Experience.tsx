@@ -30,8 +30,8 @@ import type { PublicExtras } from "@/lib/pipeline/extras";
 import type { CardRect } from "@/lib/world/entry";
 import { type AccessOptions, AccessPanel } from "./AccessPanel";
 import { EvidencePanel } from "./EvidencePanel";
-import { Gallery } from "./Gallery";
-import { PhotoDrop } from "./PhotoDrop";
+import { MemoryCarousel } from "./MemoryCarousel";
+import { BringPhoto } from "./PhotoDrop";
 import { ProcessingCopy } from "./ProcessingCopy";
 import { BeyondOverlay, MemoryDreamSlider, ProvenanceLegend } from "./Provenance";
 
@@ -41,6 +41,9 @@ const EASE = [0.22, 1, 0.36, 1] as const;
 const LABEL = "font-mono text-[11px] lowercase tracking-[0.35em] text-bone/55";
 const QUIET_BUTTON =
   "pointer-events-auto font-mono text-[10px] lowercase tracking-[0.3em] text-bone/40 transition-colors duration-500 hover:text-bone/90 focus-visible:text-bone focus-visible:outline-none";
+/** Controls over the world: legible on a bright wall as on a dark one. */
+const HUD_BUTTON =
+  "pointer-events-auto rounded-full bg-black/45 px-3.5 py-2 font-mono text-[11px] lowercase tracking-[0.25em] text-bone/85 backdrop-blur-md transition-colors duration-500 hover:bg-black/60 hover:text-bone focus-visible:text-bone focus-visible:outline-none";
 const UUID = /^[0-9a-f-]{36}$/i;
 const GALLERY_ID = /^[0-9a-f]{16}$/i;
 
@@ -56,9 +59,11 @@ interface Photo {
 interface Props {
   gallery: GalleryCard[];
   access: AccessOptions;
+  /** A showcase: no uploads, just memories to walk into. */
+  exploreOnly?: boolean;
 }
 
-export function Experience({ gallery, access }: Props) {
+export function Experience({ gallery, access, exploreOnly = false }: Props) {
   const router = useRouter();
   const [state, dispatch] = useReducer(reducer, "idle");
   const [photo, setPhoto] = useState<Photo | null>(null);
@@ -76,6 +81,7 @@ export function Experience({ gallery, access }: Props) {
    * unseen parts are a little quieter than the photographed ones. */
   const [dream, setDream] = useState(0.75);
   const [photoLayers, setPhotoLayers] = useState(true);
+  const [marbleOnly, setMarbleOnly] = useState(false);
   const [revealing, setRevealing] = useState(false);
   const [beyond, setBeyond] = useState(false);
   const card = useRef<CardRect | null>(null);
@@ -229,8 +235,14 @@ export function Experience({ gallery, access }: Props) {
     return () => job.current?.abort();
   }, [follow, openExisting]);
 
+  // Opened by clicking its photograph: walk straight in once the world has loaded (no
+  // "step inside" stop). The click is also the gesture browsers need before sound can play.
+  const [autoEnter, setAutoEnter] = useState(false);
+
   const openGallery = useCallback(
     (id: string) => {
+      unlockAudio();
+      setAutoEnter(true);
       window.history.replaceState(null, "", `?memory=${id}`);
       openExisting(`gallery_${id}`);
     },
@@ -238,6 +250,8 @@ export function Experience({ gallery, access }: Props) {
   );
 
   const openDemo = useCallback(() => {
+    unlockAudio();
+    setAutoEnter(true);
     setNotice(null);
     setPhoto({ url: DEMO_MEMORY.photoUrl, aspect: DEMO_MEMORY.photoAspect });
     setMemory(DEMO_MEMORY);
@@ -260,6 +274,7 @@ export function Experience({ gallery, access }: Props) {
     setBeyond(false);
     setRevealing(false);
     setWorldLoaded(false);
+    setAutoEnter(false);
     setNotice(null);
     setReturnSignal(0);
     setScrolled(false);
@@ -294,6 +309,13 @@ export function Experience({ gallery, access }: Props) {
     unlockAudio();
     dispatch({ type: "STEP_INSIDE" });
   }, [canEnter, measure]);
+
+  useEffect(() => {
+    if (!autoEnter || !canEnter) return;
+    // A beat with the photograph whole, then through it.
+    const id = setTimeout(stepInside, 450);
+    return () => clearTimeout(id);
+  }, [autoEnter, canEnter, stepInside]);
 
   // Hold SPACE to see what the photograph saw.
   useEffect(() => {
@@ -346,6 +368,7 @@ export function Experience({ gallery, access }: Props) {
             seenObjects={seenObjects}
             dream={dream}
             photoLayers={photoLayers}
+            marbleOnly={marbleOnly}
             revealing={revealing}
             frozen={Boolean(evidence) || beyond}
             onBeyond={() => {
@@ -367,7 +390,7 @@ export function Experience({ gallery, access }: Props) {
         <h1 className="font-display text-[clamp(2.25rem,5vw,3.5rem)] leading-none tracking-[0.02em]">
           AGAIN.
         </h1>
-        <p className={`${LABEL} whitespace-nowrap`}>step inside a memory</p>
+        <p className={`${LABEL} whitespace-nowrap`}>enter a memory</p>
       </motion.header>
 
       <AnimatePresence mode="wait">
@@ -382,29 +405,35 @@ export function Experience({ gallery, access }: Props) {
             exit={{ opacity: 0, transition: { duration: 0.4 } }}
             data-testid="home"
           >
-            <section className="relative flex h-[100svh] flex-col items-center justify-center px-4">
-              <PhotoDrop onPhoto={choose} onProblem={setNotice} />
-              <motion.div
-                className="absolute bottom-[10vh] flex flex-col items-center gap-4"
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                transition={{ duration: 1.4, delay: 0.4 }}
-              >
-                {notice && <p className={`${LABEL} text-bone/70`}>{notice}</p>}
-                <button type="button" onClick={openDemo} className={QUIET_BUTTON}>
-                  or enter a memory
-                </button>
-              </motion.div>
-              {gallery.length > 0 && (
-                <motion.p
-                  className="absolute bottom-6 font-mono text-[9px] lowercase tracking-[0.35em] text-bone/30"
-                  animate={{ opacity: scrolled ? 0 : 1 }}
-                >
-                  other memories ↓
-                </motion.p>
+            <section className="relative flex h-[100svh] flex-col items-center justify-center overflow-hidden px-4">
+              <MemoryCarousel
+                memories={[
+                  {
+                    id: DEMO_MEMORY.id,
+                    photoUrl: DEMO_MEMORY.photoUrl,
+                    label: "enter a memory: a living room, 1946",
+                    onOpen: openDemo,
+                  },
+                  // Shared memories (the demo's own gallery entry is the demo, above).
+                  ...gallery
+                    .filter((card) => card.id !== DEMO_MEMORY.galleryId)
+                    .map((card) => ({
+                      id: card.id,
+                      photoUrl: card.photoUrl,
+                      label: "enter a shared memory",
+                      testId: "gallery-card",
+                      originalUrl: card.originalPhotoUrl,
+                      onOpen: () => openGallery(card.id),
+                    })),
+                ]}
+              />
+              {!exploreOnly && (
+                <div className="absolute bottom-[8vh] flex flex-col items-center gap-4">
+                  {notice && <p className={`${LABEL} text-bone/70`}>{notice}</p>}
+                  <BringPhoto onPhoto={choose} onProblem={setNotice} />
+                </div>
               )}
             </section>
-            <Gallery cards={gallery} onOpen={openGallery} />
           </motion.div>
         ) : (
           <motion.div
@@ -494,7 +523,7 @@ export function Experience({ gallery, access }: Props) {
                   </motion.p>
                 )}
 
-                {canEnter && (
+                {canEnter && !autoEnter && (
                   <motion.div
                     key="ready"
                     className="flex flex-col items-center gap-5"
@@ -562,6 +591,8 @@ export function Experience({ gallery, access }: Props) {
             )}
             photoLayers={photoLayers}
             onTogglePhotoLayers={() => setPhotoLayers((v) => !v)}
+            marbleOnly={marbleOnly}
+            onToggleMarbleOnly={() => setMarbleOnly((v) => !v)}
           />
         )}
       </AnimatePresence>
@@ -612,6 +643,8 @@ function ExploreHud({
   hasPhotoLayers,
   photoLayers,
   onTogglePhotoLayers,
+  marbleOnly,
+  onToggleMarbleOnly,
 }: {
   onReturn: () => void;
   onLeave: () => void;
@@ -624,8 +657,18 @@ function ExploreHud({
   hasPhotoLayers: boolean;
   photoLayers: boolean;
   onTogglePhotoLayers: () => void;
+  marbleOnly: boolean;
+  onToggleMarbleOnly: () => void;
 }) {
   const [hintVisible, setHintVisible] = useState(true);
+  // M: only what the world model made, for comparing.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.code === "KeyM" && !(e.target instanceof HTMLInputElement)) onToggleMarbleOnly();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onToggleMarbleOnly]);
   // P: the photo's own pixels on the walls, or the world model's.
   useEffect(() => {
     if (!hasPhotoLayers) return;
@@ -636,7 +679,7 @@ function ExploreHud({
     return () => window.removeEventListener("keydown", onKey);
   }, [hasPhotoLayers, onTogglePhotoLayers]);
   useEffect(() => {
-    const id = setTimeout(() => setHintVisible(false), 7000);
+    const id = setTimeout(() => setHintVisible(false), 12000);
     return () => clearTimeout(id);
   }, []);
 
@@ -650,47 +693,54 @@ function ExploreHud({
       data-testid="explore-hud"
     >
       <motion.p
-        className="absolute bottom-20 left-1/2 -translate-x-1/2 whitespace-nowrap font-mono text-[10px] lowercase tracking-[0.3em] text-bone/45"
+        className="absolute bottom-24 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full bg-black/45 px-4 py-2 font-mono text-[11px] lowercase tracking-[0.25em] text-bone/85 backdrop-blur-md"
         animate={{ opacity: hintVisible ? 1 : 0 }}
         transition={{ duration: 1.5 }}
       >
         drag to look · wasd to move · hold space to see what the photo saw
         {hasObjects && " · click what glows"}
       </motion.p>
-      <div className="absolute bottom-7 left-1/2 -translate-x-1/2">
+      <div className="absolute bottom-6 left-1/2 -translate-x-1/2 rounded-full bg-black/45 px-5 py-2 backdrop-blur-md">
         <MemoryDreamSlider value={dream} onChange={onDream} />
       </div>
-      {hasPhotoLayers && (
+      <div className="absolute top-6 left-6 flex gap-2">
         <button
           type="button"
-          onClick={onTogglePhotoLayers}
-          aria-pressed={photoLayers}
-          title="the photograph's own pixels on the walls, or the world model's (P)"
-          className={`${QUIET_BUTTON} absolute top-6 left-6`}
+          onClick={onToggleMarbleOnly}
+          aria-pressed={marbleOnly}
+          title="only what the world model made, without our objects, photo layers and people (M)"
+          className={HUD_BUTTON}
         >
-          {photoLayers ? "photo layers on" : "photo layers off"}
+          {marbleOnly ? "marble only" : "with additions"}
         </button>
-      )}
+        {hasPhotoLayers && (
+          <button
+            type="button"
+            onClick={onTogglePhotoLayers}
+            aria-pressed={photoLayers}
+            title="the photograph's own pixels on the walls, or the world model's (P)"
+            className={`${HUD_BUTTON}`}
+          >
+            {photoLayers ? "photo layers on" : "photo layers off"}
+          </button>
+        )}
+      </div>
       {hasSound && (
         <button
           type="button"
           onClick={onToggleSound}
-          className={`${QUIET_BUTTON} absolute top-6 right-6`}
+          className={`${HUD_BUTTON} absolute top-6 right-6`}
         >
           {muted ? "sound off" : "sound on"}
         </button>
       )}
-      <button
-        type="button"
-        onClick={onLeave}
-        className={`${QUIET_BUTTON} absolute bottom-6 left-6`}
-      >
+      <button type="button" onClick={onLeave} className={`${HUD_BUTTON} absolute bottom-6 left-6`}>
         another memory
       </button>
       <button
         type="button"
         onClick={onReturn}
-        className={`${QUIET_BUTTON} absolute right-6 bottom-6`}
+        className={`${HUD_BUTTON} absolute right-6 bottom-6`}
       >
         return to photo
       </button>
