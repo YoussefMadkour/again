@@ -1,6 +1,6 @@
-// Records the demo walkthrough (docs/DEMO_SCRIPT.md) against a running app on :3000. Every
-// beat moves, and lasts at least as long as its voice line (durations from <vo_dir>/*.wav);
-// loading waits are marked for cutting. Usage: node scripts/record-demo.mjs <out_dir> <vo_dir>
+// Records the one-minute story cut against a running app on :3000 (same helpers as
+// record-demo.mjs): the 1946 room close to the photo's view, then the other rooms.
+// Usage: node scripts/record-story.mjs <out_dir> <vo_dir>
 import { execFileSync } from "node:child_process";
 import { writeFileSync } from "node:fs";
 import { chromium } from "@playwright/test";
@@ -98,38 +98,13 @@ const home = async () => {
 const demo = page.getByRole("button", { name: /enter a memory/i });
 
 await page.goto("http://localhost:3000/");
-// No text selection from the drags (it paints the page blue).
 await page.addStyleTag({ content: "* { user-select: none !important; -webkit-user-select: none !important; }" });
 await page.mouse.move(W / 2, H - 30);
 await wait(2500);
 mark("keep_start");
-
-await beat("01-what", async () => {
+await beat("a-photo", async () => {
   const r = await demo.boundingBox();
-  await glide(r.x + 40, r.y + r.height * 0.7, r.x + r.width - 40, r.y + r.height * 0.3, 6400);
-});
-await beat("02-home", async () => {
-  for (const i of [1, 2, 3]) {
-    await bringForward(i);
-    await wait(500);
-  }
-});
-await beat("03-slider", async () => {
-  await bringForward(4);
-  await page.mouse.move(W / 2, H - 30);
-  await wait(500);
-  const h = await page.getByRole("slider", { name: /Compare the original/ }).boundingBox();
-  const cx = h.x + h.width / 2, cy = h.y + h.height / 2;
-  await glide(cx, cy, cx - 160, cy, 1500, true);
-  await glide(cx - 160, cy, cx + 160, cy, 2200, true);
-  await glide(cx + 160, cy, cx, cy, 1300, true);
-  await page.evaluate(() => document.activeElement?.blur?.());
-});
-await beat("04-open", async () => {
-  await bringForward(0);
-  const r = await demo.boundingBox();
-  await glide(r.x + 60, r.y + r.height / 2, r.x + r.width / 2, r.y + r.height / 2, 3500);
-  await wait(1600); // "…click the photo"
+  await glide(r.x + 60, r.y + r.height * 0.65, r.x + r.width - 60, r.y + r.height * 0.4, 5200);
 });
 await page.mouse.move(W / 2, H - 30);
 await demo.click({ position: { x: 70, y: 70 } });
@@ -137,89 +112,54 @@ mark("cut_start");
 await page.waitForSelector('[data-state="entering"]', { timeout: 120000 });
 await wait(250);
 mark("cut_end");
-await page.waitForSelector('[data-state="exploring"]', { timeout: 20000 });
-await wait(400);
-
-await beat("05-inside", async () => {
-  await turn(-220, 1600);
-  await walk("KeyW", 700);
-  await turn(300, 1700);
+await beat("b-click", async () => {
+  await page.waitForSelector('[data-state="exploring"]', { timeout: 20000 });
+  await wait(300);
 });
-// Keep turning left: past the photograph, the notice appears (once per visit).
-await turn(-700, 2600);
-for (let i = 0; i < 6 && !(await page.getByRole("button", { name: /^continue$/i }).isVisible().catch(() => false)); i++) await turn(-200, 600);
-await beat("06-beyond", async () => { await wait(3800); });
-await page.getByRole("button", { name: /^continue$/i }).click().catch(() => {});
-await wait(600);
-await beat("07-around", async () => {
-  // The rest of the way round, to where we came in (facing her): read where the camera is.
-  const target = await page.evaluate(() => window.__againLook?.target ?? 0);
-  console.log("look before the rest of the turn", JSON.stringify(await page.evaluate(() => window.__againLook ?? null)));
-  const TAU = Math.PI * 2;
-  // turn(px) adds px × 0.0032 to the target yaw: carry on the same way to a whole turn.
-  const goal = target < 0 ? Math.floor(target / TAU + 1e-3) * TAU : Math.ceil(target / TAU - 1e-3) * TAU;
-  const px = (goal - target) / 0.0032;
-  await turn(px, Math.max(3000, (Math.abs(px) / FULL) * 9000));
-  await walk("KeyS", 500);
+// Inside the 1946 room, turns stay within the photograph's own view (±20°: 110 px ≈ 20°).
+await beat("c-room", async () => {
+  await turn(-110, 1700);
+  await walk("KeyW", 800);
+  await turn(170, 2000);
 });
-console.log("look after the turn", JSON.stringify(await page.evaluate(() => window.__againLook ?? null)));
-await beat("08-her", async () => {
-  await walk("KeyA", 600);
-  await turn(160, 2400);
-  await walk("KeyD", 700);
-  await turn(-120, 1800);
+await beat("d-her", async () => {
+  await turn(-90, 1800);
+  await walk("KeyW", 450);
+  await turn(20, 900);
 });
-await beat("09-lamp", async () => {
-  const lamp = await page.evaluate(() => {
-    const m = [...document.querySelectorAll("button")].find((b) => /table lamp/i.test(b.getAttribute("aria-label") || ""));
-    const r = m?.getBoundingClientRect();
-    return r ? { x: r.x + r.width / 2, y: r.y + r.height / 2 } : null;
-  });
-  if (lamp) {
-    await glide(W / 2, H * 0.7, lamp.x, lamp.y, 1200);
-    await page.mouse.click(lamp.x, lamp.y);
-  }
-  await wait(3000);
-  await page.keyboard.press("Escape");
-  await wait(600);
-});
-await beat("10-space", async () => {
+await beat("e-space", async () => {
   await page.keyboard.down("Space");
-  await turn(-260, 2600);
-  await turn(260, 2600);
+  await turn(-60, 2600);
+  await turn(60, 2600);
   await page.keyboard.up("Space");
 });
-await beat("11-dream", async () => {
-  const s = await page.getByRole("slider", { name: /memory to dream/i }).boundingBox();
-  const y = s.y + s.height / 2, x = s.x + s.width * 0.75;
-  await glide(x, y, s.x + 4, y, 1300, true);
-  await wait(500);
-  await glide(s.x + 4, y, x, y, 1300, true);
+await beat("f-any", async () => {
+  await home();
 });
-await beat("12-m", async () => {
-  await page.keyboard.press("KeyM");
-  await turn(-200, 2400);
-  await turn(200, 2000);
-  await page.keyboard.press("KeyM");
-  await wait(1200);
-});
-await home();
 await openCard(1);
-await beat("13-villa", async () => {
-  await walk("KeyW", 600);
-  await turn(-1963, 10000);
-  await walk("KeyS", 500);
+await beat("g-villa", async () => {
+  await walk("KeyW", 500);
+  await turn(-1100, 6200);
 });
 await home();
 await openCard(3);
-await beat("14-blue", async () => {
-  await turn(-980, 5200);
-  await walk("KeyW", 700);
-  await turn(980, 5200);
+await beat("h-blue", async () => {
+  await turn(-950, 6000);
 });
-await beat("15-end", async () => {
-  await page.keyboard.press("Escape");
-  await wait(3600);
+await home();
+await beat("i-luna", async () => {
+  await bringForward(4);
+  await page.mouse.move(W / 2, H - 30);
+  await wait(400);
+  const h = await page.getByRole("slider", { name: /Compare the original/ }).boundingBox();
+  const cx = h.x + h.width / 2, cy = h.y + h.height / 2;
+  await glide(cx, cy, cx - 150, cy, 1400, true);
+  await glide(cx - 150, cy, cx + 150, cy, 2000, true);
+  await glide(cx + 150, cy, cx, cy, 1200, true);
+  await page.evaluate(() => document.activeElement?.blur?.());
+});
+await beat("j-end", async () => {
+  await glide(W / 2, H - 30, W / 2 + 120, H - 60, 2200);
 });
 mark("keep_end");
 const v = page.video();
